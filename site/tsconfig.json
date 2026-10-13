@@ -1,0 +1,46 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "types": [
+      "vite/client",
+      "vitest/globals",
+      "@testing-library/jest-dom"
+    ]
+  },
+  "include": [
+    "src/main.tsx",
+    "src/App.tsx",
+    "src/App.test.tsx",
+    "src/styles.css",
+    "src/test-setup.ts",
+    "src/contracts.ts",
+    "src/components/DecisionModelExplainer.tsx",
+    "src/components/RecordedStepDiagram.tsx",
+    "src/pages/IntroPage.tsx",
+    "src/pages/IntroPage.test.tsx",
+    "src/pages/LearnPage.tsx",
+    "src/pages/LearnPage.test.tsx",
+    "src/data/recordedCli.ts",
+    "vite.config.ts",
+    "playwright.config.ts",
+    "e2e/home.spec.ts",
+    "e2e/learn.spec.ts",
+    "e2e/header.spec.ts",
+    "e2e/final-review-fixes.spec.ts"
+  ]
+}

@@ -1,0 +1,74 @@
+{
+  "version": "1",
+  "questions": {
+    "event_type": ["andon", "supplier_notice", "inspection", "maintenance", "engineering_change", "cannot_tell"],
+    "urgency": ["routine", "urgent", "critical", "cannot_tell"],
+    "owning_agent": ["production", "supply_chain", "quality", "maintenance", "engineering", "cannot_tell"],
+    "action_gate": ["proceed", "require_approval", "block"]
+  },
+  "gates": {
+    "triage": {
+      "label": "Gate 1: classify and route",
+      "classificationCalls": 1,
+      "questionIds": ["event_type", "urgency", "owning_agent"],
+      "instructions": "Answer all three named questions together in one classification call using only event facts. Do not infer missing facts from the source or kind metadata. Use cannot_tell for unclear, missing, or conflicting evidence. Classification is evidence, not permission; application code owns human routing."
+    },
+    "action": {
+      "label": "Gate 2: assess proposed action",
+      "classificationCalls": 1,
+      "questionIds": ["action_gate"],
+      "instructions": "Assess the proposal, never execute it. Consider the proposed action, supporting event facts, impact, and reversibility. Return only proceed, require_approval, or block as evidence for application policy. Rule thresholds and final authority belong to ordinary policy code, not this contract or a model response."
+    }
+  },
+  "questionDefinitions": {
+    "event_type": {
+      "label": "What kind of plant event is supported by the facts?",
+      "instructions": "Select the event type evidenced by the facts. Use cannot_tell when multiple event types are equally plausible or the evidence is insufficient.",
+      "options": [
+        {"id": "andon", "label": "Production station or line alert"},
+        {"id": "supplier_notice", "label": "Supplier material or delivery notice"},
+        {"id": "inspection", "label": "Quality inspection finding"},
+        {"id": "maintenance", "label": "Equipment maintenance finding"},
+        {"id": "engineering_change", "label": "Engineering change notice"},
+        {"id": "cannot_tell", "label": "Insufficient or conflicting event-type evidence"}
+      ]
+    },
+    "urgency": {
+      "label": "How urgent is the event?",
+      "instructions": "Assess the stated operational urgency using event facts. Do not invent timing, safety, or impact information. Use cannot_tell for missing or conflicting urgency evidence.",
+      "options": [
+        {"id": "routine", "label": "Planned or routine attention"},
+        {"id": "urgent", "label": "Prompt operational attention"},
+        {"id": "critical", "label": "Immediate safety or severe operational concern"},
+        {"id": "cannot_tell", "label": "Insufficient or conflicting urgency evidence"}
+      ]
+    },
+    "owning_agent": {
+      "label": "Which line-of-business agent owns the event?",
+      "instructions": "Choose the owning LOB from the evidence, not merely the event kind. Use cannot_tell when ownership is unclear, missing, or contested. This option is not a human agent; application routing separately selects human.",
+      "options": [
+        {"id": "production", "label": "Production operations"},
+        {"id": "supply_chain", "label": "Supply chain"},
+        {"id": "quality", "label": "Quality"},
+        {"id": "maintenance", "label": "Maintenance"},
+        {"id": "engineering", "label": "Engineering"},
+        {"id": "cannot_tell", "label": "Insufficient or conflicting ownership evidence"}
+      ]
+    },
+    "action_gate": {
+      "label": "How should application policy treat the proposed action?",
+      "instructions": "Assess only the supplied proposal and event facts. Unsupported or uncertain proposals must not be treated as safe to proceed. These labels advise application policy; they do not grant authority.",
+      "rubric": {
+        "proposed_action": "Is the proposal appropriate, bounded, and within its stated scope?",
+        "evidence": "Which stable event fact IDs support or contradict the proposal? Is essential evidence missing?",
+        "impact": "What operational, safety, quality, or financial effects are stated? Do not invent costs or policy limits.",
+        "reversibility": "Can the stated change be undone safely, and is recovery described? Unknown reversibility requires review."
+      },
+      "options": [
+        {"id": "proceed", "label": "Supported, bounded, reversible proposal with no stated unresolved risk"},
+        {"id": "require_approval", "label": "Human review needed for uncertainty, material impact, or unclear reversibility"},
+        {"id": "block", "label": "Unsafe or contradicted proposal with unacceptable stated impact"}
+      ]
+    }
+  }
+}
