@@ -10,8 +10,8 @@ from agent_framework import AgentFrameworkException
 from pydantic import ValidationError
 
 from .agents import ExpertTeam, underlying_demo_error
-from .contracts import ClarificationRequest, CustomerDeliveryChange, DemoError, FinalResult, HumanResponse, RunState
-from .fixtures import fixture_records, initial_evidence, validate_delivery_change
+from .contracts import SCENARIO_ID, ClarificationRequest, CustomerDeliveryChange, DemoError, FinalResult, HumanResponse, RunState
+from .fixtures import EXAMPLES, fixture_records, initial_evidence, validate_delivery_change
 from .presentation import Presenter
 from .runtime import AzureRuntime, Budget, Config, DecisionClient
 from .workflow import build_workflow
@@ -29,7 +29,7 @@ def parse_terminal_response(text: str, request: ClarificationRequest) -> HumanRe
     text = text.strip()
     if text.lower() in ("reject", "escalate"):
         return HumanResponse(kind=text.lower())
-    if "customer_delivery_change" not in request.allowed_keys:
+    if request.scenario_id != SCENARIO_ID or "customer_delivery_change" not in request.allowed_keys:
         raise DemoError("No customer-delivery clarification was requested; reject or escalate instead.")
     if text.lower() == "no":
         change = CustomerDeliveryChange(
@@ -105,12 +105,13 @@ async def read_terminal(request: ClarificationRequest) -> HumanResponse | None:
     if not sys.stdin.isatty():
         terminal_trace("Review pending: noninteractive stdin; no automatic continuation.")
         return None
-    can_record = "customer_delivery_change" in request.allowed_keys
+    can_record = request.scenario_id == SCENARIO_ID and "customer_delivery_change" in request.allowed_keys
     if can_record:
         terminal_trace("1. Record customer response after contact: customer will move the second delivery.")
     else:
         terminal_trace("This pause needs responsible-owner evidence; a customer-window update is not requested.")
-    terminal_trace("2. Reject the recommendation and request leadership escalation.")
+    terminal_trace("2. Reject the recommendation and request leadership escalation." if can_record else
+                   "2. Request leadership escalation for unresolved review.")
     choice = await read_terminal_line("Choose 1 or 2: " if can_record else "Choose 2: ")
     if choice is None:
         return None
@@ -165,10 +166,10 @@ async def collect_events(stream):
 
 async def run_demo(runtime: AzureRuntime, response_reader=read_terminal, trace=terminal_trace, *, verbose=False) -> FinalResult:
     budget = runtime.budget
-    presenter = Presenter(trace, verbose)
+    presenter = Presenter(trace, verbose, scenario_id=runtime.scenario_id)
     presenter.case()
     workflow = build_workflow(ExpertTeam(runtime), DecisionClient(runtime), budget, trace, presenter=presenter)
-    state = RunState(evidence=initial_evidence())
+    state = RunState(scenario_id=runtime.scenario_id, evidence=initial_evidence(runtime.scenario_id))
     try:
         requests, outputs = await budget.bound(
             lambda: collect_events(workflow.run(state, stream=True)), budget.remaining(),
@@ -217,11 +218,11 @@ async def run_demo(runtime: AzureRuntime, response_reader=read_terminal, trace=t
     return result
 
 
-async def live_run(config, verbose=False):
+async def live_run(config, verbose=False, scenario_id=SCENARIO_ID):
     terminal_trace("LIVE Azure Foundry inference | SYNTHETIC fixture tools | proposals only")
-    terminal_trace("One clarification; hard maximum 20 GPT +3 Decision-1 attempts, not expected runtime.")
+    terminal_trace("At most one clarification; hard maximum 20 GPT +3 Decision-1 attempts, not expected runtime.")
     budget = Budget(terminal_trace)
-    runtime = AzureRuntime(config, budget)
+    runtime = AzureRuntime(config, budget, scenario_id=scenario_id)
     try:
         return (await run_demo(runtime, verbose=verbose)).code
     finally:
@@ -229,9 +230,9 @@ async def live_run(config, verbose=False):
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="V2: quality-hold containment and customer-delivery recovery.")
-    parser.add_argument("--example", choices=["quality-hold", "supply-chain"], required=True,
-                        help="Quality-hold preset; supply-chain is its backward-compatible alias")
+    parser = argparse.ArgumentParser(description="V2: bounded expert-team planning with synthetic operational cases.")
+    parser.add_argument("--example", choices=list(EXAMPLES), required=True,
+                        help="Select a synthetic case; supply-chain remains an alias for quality-hold")
     parser.add_argument("--verbose", action="store_true", help="Include complete model scores, tool/call diagnostics and provenance")
     parser.add_argument("--endpoint", help="Existing Azure resource root; overrides FOUNDRY_ENDPOINT")
     parser.add_argument("--decision-deployment", help="Existing Decision-1 deployment; overrides DECISION_DEPLOYMENT")
@@ -241,7 +242,7 @@ def main(argv=None) -> int:
     logging.getLogger("agent_framework").setLevel(logging.CRITICAL)
     try:
         config = Config.from_args(args)
-        return asyncio.run(live_run(config, verbose=args.verbose))
+        return asyncio.run(live_run(config, verbose=args.verbose, scenario_id=EXAMPLES[args.example]))
     except DemoError as exc:
         print(f"ERROR: {safe_text(str(exc))}", file=sys.stderr)
         return 1

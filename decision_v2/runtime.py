@@ -16,10 +16,10 @@ from azure.identity import AzureCliCredential, get_bearer_token_provider
 from openai import AsyncOpenAI
 
 from .contracts import (
-    AGENTS, SCENARIO_ID, DemoError, RunState, SELECTION_OPTIONS, VALIDATION_OPTIONS,
+    AGENTS, SCENARIO_ID, SCENARIO_IDS, ScenarioId, DemoError, RunState, SELECTION_OPTIONS, VALIDATION_OPTIONS,
     parse_choices,
 )
-from .fixtures import ALLOWLIST, ISSUE, fixture_records
+from .fixtures import ALLOWLIST, fixture_records, issue_text
 
 DECISION_SCOPE = "https://cognitiveservices.azure.com/.default"
 LLM_SCOPE = "https://ai.azure.com/.default"
@@ -183,8 +183,9 @@ class Budget:
 
 
 class GuardedTransport(httpx.AsyncBaseTransport):
-    def __init__(self, config: Config, budget: Budget, inner: httpx.AsyncBaseTransport):
+    def __init__(self, config: Config, budget: Budget, inner: httpx.AsyncBaseTransport, scenario_id: ScenarioId = SCENARIO_ID):
         self.config, self.budget, self.inner = config, budget, inner
+        self.scenario_id = scenario_id
 
     async def handle_async_request(self, request):
         call = CURRENT_CALL.get()
@@ -241,7 +242,7 @@ class GuardedTransport(httpx.AsyncBaseTransport):
                     args = json.loads(function.get("arguments", ""))
                 except (json.JSONDecodeError, TypeError) as exc:
                     raise DemoError("Fixture tool arguments are not valid JSON.") from exc
-                if args != {"scenario_id": SCENARIO_ID}:
+                if args != {"scenario_id": self.scenario_id}:
                     raise DemoError("Fixture tools accept only the fixed synthetic scenario.")
             self.budget.check_tool_batch(names, actor, revision)
         elif calls or not isinstance(message.get("content"), str) or not message["content"].strip():
@@ -252,12 +253,15 @@ class GuardedTransport(httpx.AsyncBaseTransport):
 
 
 class AzureRuntime:
-    def __init__(self, config: Config, budget: Budget, *, credential=None, transport=None):
+    def __init__(self, config: Config, budget: Budget, *, credential=None, transport=None, scenario_id: ScenarioId = SCENARIO_ID):
+        if scenario_id not in SCENARIO_IDS:
+            raise DemoError("Unsupported runtime scenario.")
         self.config, self.budget = config, budget
+        self.scenario_id = scenario_id
         self.credential = credential or AzureCliCredential(process_timeout=15)
         inner = transport or httpx.AsyncHTTPTransport(retries=0, proxy=getproxies().get("https"))
         self.http = httpx.AsyncClient(
-            transport=GuardedTransport(config, budget, inner),
+            transport=GuardedTransport(config, budget, inner, scenario_id),
             timeout=60, follow_redirects=False, trust_env=False,
         )
         self.provider = get_bearer_token_provider(self.credential, LLM_SCOPE)
@@ -312,11 +316,19 @@ class DecisionClient:
             raise DemoError("Decision-1 returned invalid JSON.") from exc
 
     async def select(self, state: RunState):
+        if state.scenario_id != self.runtime.scenario_id:
+            raise DemoError("Selection scenario differs from its bound runtime.")
         domains = {
-            "supply-chain": "released versus held material, shipped exposure and separate-lot replacement logistics",
-            "production": "dated delivery obligations, released-stock shortfall and schedule recovery",
-            "commercial": "customer delivery flexibility, responsible notification/disposition and freight authority",
+            "supply-chain": "released/material allocations, shipping recovery and logistics",
+            "production": "readiness, qualified capacity, dated obligations and schedule recovery",
+            "commercial": "documented customer commitments/requests and existing authority",
         }
+        if state.scenario_id == SCENARIO_ID:
+            domains = {
+                "supply-chain": "released versus held material, shipped exposure and separate-lot replacement logistics",
+                "production": "dated delivery obligations, released-stock shortfall and schedule recovery",
+                "commercial": "customer delivery flexibility, responsible notification/disposition and freight authority",
+            }
         names = [a.replace("-", "_") + "_needed" for a in AGENTS]
         questions = {
             name: {"type": "choice", "instructions": (
@@ -328,20 +340,33 @@ class DecisionClient:
                 "cannot_determine": "Insufficient/conflicting evidence to decide expertise is needed.",
             }} for actor, name in zip(AGENTS, names)
         }
-        payload = await self.ask({"original_issue": ISSUE}, questions, "selection", 0)
+        payload = await self.ask({
+            "scenario_id": state.scenario_id, "original_issue": issue_text(state.scenario_id),
+            "fixture": {name: record.model_dump(mode="json") for name, record in fixture_records(state.scenario_id).items()},
+        }, questions, "selection", 0)
         answers = parse_choices(payload, names, SELECTION_OPTIONS)
         return dict(zip(AGENTS, (answers[name] for name in names)))
 
     async def validate(self, state: RunState):
+        if state.scenario_id != self.runtime.scenario_id:
+            raise DemoError("Validation scenario differs from its bound runtime.")
         question = {"validation": {
             "type": "choice", "instructions": (
                 "Check factual adequacy, not persuasive wording: original issue, canonical fixtures, "
-                "all findings, untrusted customer-window assertions and actual proposal. "
-                "Reconcile held+shipped lot quantities and scheduled demand. Exclude held stock. "
+                "all findings, untrusted customer-window assertions and actual proposal. " +
+                ("Reconcile held+shipped lot quantities and scheduled demand. Exclude held stock. "
                 "Do not extrapolate six sample failures to total lot defects. Keep shipped-suspect "
                 "containment and pending notification separate from delivery recovery even after a window moves. "
                 "Check uses_held_stock=false, containment_required=true, expedited-freight and customer-change "
                 "flags against text, including freight dependencies within a broader recovery action. "
+                 if state.scenario_id == SCENARIO_ID else
+                 "No quality hold or suspect shipment exists. Check released finished/material allocations, "
+                 "setup plus production duration against qualified/staffed capacity and other-order reservations; "
+                 "packing/readiness versus pickup, snapshot versus booking cutoff, transit versus documented "
+                 "customer window, approved carrier/freight cost versus existing authority, and evidenced "
+                 "customer requests. Check typed dependencies/overtime/displacement flags against text and "
+                 "canonical records. A supported case can be ready for responsible-owner planning without "
+                 "new approvals; do not force acceptance or invent uncertainty. ") +
                 "An offer is not received/accepted inventory; human assertions are not release, "
                 "customer or spending authority. Preserve approvals, unknowns and conflicts. "
                 "Proposal validation is not proof of execution or real-world resolution."
@@ -352,8 +377,8 @@ class DecisionClient:
             },
         }}
         context = {
-            "original_issue": ISSUE,
-            "fixture": {k: v.model_dump(mode="json") for k, v in fixture_records().items()},
+            "scenario_id": state.scenario_id, "original_issue": issue_text(state.scenario_id),
+            "fixture": {k: v.model_dump(mode="json") for k, v in fixture_records(state.scenario_id).items()},
             "findings": [state.findings[a].model_dump(mode="json") for a in state.active],
             "human_evidence": [e.model_dump(mode="json") for e in state.overlays],
             "proposal": state.proposal.model_dump(mode="json"),

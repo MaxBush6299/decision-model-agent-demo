@@ -2,7 +2,8 @@ import json
 import textwrap
 from datetime import datetime
 
-from .fixtures import SNAPSHOT, delivery_position, fixture_records
+from .contracts import SCENARIO_ID
+from .fixtures import SNAPSHOT, delivery_position, fixture_records, issue_id, operational_position, operational_checks
 
 LABELS = {
     "shipment_arrival": "replacement arrival unconfirmed",
@@ -14,6 +15,14 @@ LABELS = {
     "quality_containment": "Quality-owned hold, inspection and shipped-lot containment",
     "customer_notification": "responsible Quality/customer contact notification",
     "customer_commitment": "formal customer delivery-window review",
+    "production_authority": "responsible production/material/capacity review",
+    "carrier_confirmation": "carrier slot confirmation missing",
+    "delivery_window": "dispatch timing or documented delivery window unsupported",
+    "production_capacity": "documented staffed production/packing capacity insufficient",
+    "qualified_cell": "existing cell qualification unverified",
+    "material_allocation": "released stock/material allocation insufficient",
+    "customer_request": "customer planning amendment unverified",
+    "other_order_impact": "other committed-order reservations unsupported",
 }
 ACTION_LABELS = {
     "seek_freight_approval": "seek freight authority",
@@ -22,6 +31,9 @@ ACTION_LABELS = {
     "contain_and_recover": "contain exposure and evaluate delivery recovery separately",
     "request_customer_window": "request a customer delivery-window review",
     "gather_information": "establish missing evidence before committing",
+    "switch_approved_carrier": "plan the approved alternative carrier within existing authority",
+    "use_qualified_cell": "plan on the already-qualified alternative cell",
+    "accept_requested_window": "plan against the documented earlier customer request",
 }
 SOURCE_LABELS = {
     "read_inventory": "inventory and Quality hold",
@@ -38,8 +50,17 @@ def display_time(value):
 
 
 class Presenter:
-    def __init__(self, output, verbose=False):
+    def __init__(self, output, verbose=False, *, scenario_id=SCENARIO_ID):
         self.output, self.verbose = output, verbose
+        self.scenario_id = scenario_id
+        self.labels = dict(LABELS)
+        if scenario_id != SCENARIO_ID:
+            self.labels.update({
+                "quality_containment": "review model-reported containment need (no recorded quality incident)",
+                "customer_notification": "review model-reported notification need (none pending in fixture)",
+                "customer_disposition": "model-reported disposition question (no recorded suspect shipment)",
+                "customer_delivery_change": "model-reported customer-window question",
+            })
         self.sections = set()
 
     def line(self, text):
@@ -66,7 +87,10 @@ class Presenter:
             self.output(f"[diagnostic] {label}: {value.model_dump_json()}")
 
     def case(self):
-        records = fixture_records()
+        if self.scenario_id != SCENARIO_ID:
+            self.operational_case()
+            return
+        records = fixture_records(self.scenario_id)
         stock, shipment, build = records["read_inventory"], records["read_shipment"], records["read_build"]
         lot, position = stock.incident, delivery_position()
         self.section("CASE")
@@ -90,6 +114,37 @@ class Presenter:
                   "No approved concession. Notification and customer disposition remain pending.")
         self.line("Model results are advisory. Synthetic evidence is not a live ERP/QA/customer record.")
 
+    def operational_case(self):
+        records = fixture_records(self.scenario_id)
+        stock, build, shipment, policy = (records[name] for name in
+                                         ("read_inventory", "read_build", "read_shipment", "read_approval_policy"))
+        position = operational_position(records)
+        self.section("CASE")
+        self.line(f"SYNTHETIC {build.title} | snapshot {display_time(SNAPSHOT)}")
+        self.line(f"{build.customer} | order {build.order_id}")
+        self.line(build.context)
+        self.line(f"Demand {position['demand_units']}; unallocated released finished units "
+                  f"{position['available_stock_units']}; planned production {build.production_units}.")
+        if build.production_units or stock.released_material_units:
+            self.line(f"Released materials {stock.released_material_units} minus other-order reservations "
+                      f"{stock.materials_reserved_other_orders} = {position['available_material_units']} available.")
+        if build.cell:
+            self.line(f"Cell {build.cell.cell_id}: {position['production_minutes']} setup/production minutes "
+                      f"against {position['available_cell_minutes']:g} unreserved staffed minutes; "
+                      f"qualification {build.cell.qualification_reference or 'unverified'}.")
+        if position["ready_at"]:
+            self.line("Ready plan: " + display_time(position["ready_at"]))
+        self.line(f"{shipment.carrier}: booking cutoff {display_time(shipment.booking_cutoff)}; "
+                  f"pickup {display_time(shipment.pickup_at)}, {shipment.transit_minutes} transit minutes.")
+        self.line(f"Arrival plan {display_time(position['arrival_at'])}; customer window "
+                  f"{display_time(shipment.window_start)} to {display_time(shipment.window_end)}.")
+        self.line(f"Incremental freight ${shipment.freight_cost_usd:,} against ${policy.planner_limit_usd:,} authority. "
+                  f"Customer schedule/request reference: {shipment.commitment_reference or 'missing'}.")
+        for key, supported in operational_checks(records).items():
+            if not supported:
+                self.line("Unsupported evidence: " + self.labels[key])
+        self.line("Synthetic read-only planning records; no real shipment, production or customer writes.")
+
     def choice(self, label, answer, selection=False):
         if selection:
             self.section("TEAM")
@@ -111,16 +166,22 @@ class Presenter:
         self.line(f"{finding.agent_id.title()} (assessment {finding.revision + 1})")
         self.line("  Evidence: " + finding.assessment)
         self.line("  Implication: " + finding.implication)
-        sources = {record.evidence_id: SOURCE_LABELS[name]
-                   for name, record in fixture_records().items()}
-        sources["issue:quality-hold-v2"] = "synthetic incident"
+        labels = SOURCE_LABELS if self.scenario_id == SCENARIO_ID else {
+            "read_inventory": "released stock and reserved materials",
+            "read_shipment": "carrier slot and customer window",
+            "read_build": "qualified capacity and committed orders",
+            "read_approval_policy": "existing authority and planning request",
+        }
+        sources = {record.evidence_id: labels[name]
+                   for name, record in fixture_records(self.scenario_id).items()}
+        sources[issue_id(self.scenario_id)] = "synthetic incident" if self.scenario_id == SCENARIO_ID else "synthetic case"
         self.line("  Sources: " + ", ".join(
             "unverified customer-planner assertion" if key.startswith("human:") else sources[key]
             for key in finding.evidence_ids
         ))
         self.line("  Recommended next step: " + ACTION_LABELS[finding.recommended_action])
         if finding.unknown_keys:
-            self.line("  Still missing: " + "; ".join(LABELS[k] for k in finding.unknown_keys))
+            self.line("  Still missing: " + "; ".join(self.labels[k] for k in finding.unknown_keys))
         self.record("complete finding/provenance", finding)
 
     def proposal(self, state):
@@ -129,7 +190,7 @@ class Presenter:
         self.line(("Updated" if state.revision else "Initial") + " coordinator proposal: " + state.proposal.brief)
         self.line("Next step: " + ACTION_LABELS[state.proposal.recommended_action])
         if state.proposal.unknown_keys:
-            self.line("Missing evidence: " + "; ".join(LABELS[k] for k in state.proposal.unknown_keys))
+            self.line("Missing evidence: " + "; ".join(self.labels[k] for k in state.proposal.unknown_keys))
         for conflict in state.proposal.conflicts:
             self.line("Preserved disagreement: " + conflict.description)
         self.record("complete proposal/provenance", state.proposal)
@@ -139,9 +200,9 @@ class Presenter:
             self.section("INITIAL PLAN")
             self.line("Assessment paused before expert dispatch; selection evidence is unresolved.")
         if state.policies:
-            self.line("Required owner handoffs: " + "; ".join(LABELS[k] for k in state.policies))
+            self.line("Required owner handoffs: " + "; ".join(self.labels[k] for k in state.policies))
         self.section("HUMAN CLARIFICATION")
-        if "customer_delivery_change" in request.allowed_keys:
+        if self.scenario_id == SCENARIO_ID and "customer_delivery_change" in request.allowed_keys:
             first, second = fixture_records()["read_build"].deliveries
             supported = state.proposal is not None and state.proposal.recommended_action == "request_customer_window"
             label = ("Recommended follow-up to the coordinator proposal" if supported else
@@ -156,7 +217,13 @@ class Presenter:
                 self.line("Review the actual findings and coordinator proposal above before contacting the customer.")
             else:
                 self.line("Expert selection remains unresolved; customer timing alone cannot resolve it.")
-        self.line("Planning update only; quality release, containment and required approvals remain separate.")
+        if self.scenario_id == SCENARIO_ID:
+            self.line("Planning update only; quality release, containment and required approvals remain separate.")
+        else:
+            self.line("Responsible-owner review is required; this case has no supported terminal evidence update.")
+            for reason in reasons:
+                if not reason.startswith(("Unknown domain evidence:", "Mandatory approval handoff:")):
+                    self.line(reason)
         for reason in reasons:
             self.diagnostic("Human review: " + reason)
 
@@ -183,14 +250,20 @@ class Presenter:
                 self.line(reason)
             elif reason.startswith("Mandatory approval handoff: "):
                 keys = reason.removeprefix("Mandatory approval handoff: ").split(", ")
-                self.line("Required owner actions: " + "; ".join(LABELS[k] for k in keys))
+                self.line("Required owner actions: " + "; ".join(self.labels[k] for k in keys))
             elif reason.startswith("Unknown domain evidence: "):
                 keys = reason.removeprefix("Unknown domain evidence: ").split(", ")
-                self.line("Unresolved evidence: " + "; ".join(LABELS[k] for k in keys))
+                self.line("Unresolved evidence: " + "; ".join(self.labels[k] for k in keys))
             else:
                 self.line("Unresolved: " + reason)
-        self.line("Quality retains the held lot and owns shipped-suspect containment/disposition. "
-                  "Delivery relief never closes the quality incident.")
+        if self.scenario_id == SCENARIO_ID:
+            self.line("Quality retains the held lot and owns shipped-suspect containment/disposition. "
+                      "Delivery relief never closes the quality incident.")
+        else:
+            if result.status == "advisory_complete":
+                self.line("Plan ready for responsible-owner execution review; model validation is not execution "
+                          "or safety certification.")
+            self.line("Actual shipment, production and customer actions remain with responsible owners.")
         self.attempts(budget)
 
     def attempts(self, budget):

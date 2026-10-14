@@ -7,6 +7,64 @@ researched quality-hold/customer-delivery case and approved implementation:
 map and terminal presentation, not the bounded architecture/auth constraints.
 No additional conceptual approval gate or live-inference permission is implied.
 
+On the same date the user requested "Lets do all 3": add `carrier-delay`,
+`production-resequence`, and `order-pull-forward`, retaining quality-hold and
+its supply-chain alias. These additions use the same bounded architecture;
+they do not script live model selections, recommendations or validation.
+
+## Additional approved synthetic cases
+
+Same Thursday14:00 snapshot, part MB-217 and fictional Tier-1 context:
+
+- Carrier delay: SO-6101 has600 released, packed/staged units. Original
+  Friday12:30 ETA misses09:00-11:00. Approved alternate quote900<2500,
+  Thursday14:30 booking cutoff,15:00 pickup and1110min transit support
+  Friday09:30. Inventory/build evidence confirms readiness independently
+  from shipping/authority/customer-window evidence.
+- Production resequence: SO-6102 needs500:100 finished+400 new.440 released
+  material units support400 planned units plus buffer. P1 is unavailable.
+  Qualified P2 has240 staffed/unreserved minutes; setup30+run150 at160/hour
+  plus separate packing60 yields Thursday18:30 readiness. Standard Friday05:30
+  pickup+240min transit yields09:30 within09:00-11:00, without overtime,
+  new qualification or customer change.
+- Order pull-forward: evidenced EDI customer planning amendment CR-6701
+  requests400 Friday10:00-12:00, earlier than original16:00.160 finished+240
+  new;600 materials-200 reserved=400 available. Qualified C4 has300 staffed
+  minutes-120 reserved=180 available; main setup30+run120=150, ready after
+  packing at18:00. SO-6702's200 units retain17:00-19:00 production,200 materials
+  and Friday14:00 delivery. Standard Friday06:00 pickup+240min transit gives10:00.
+  Customer request is synthetic planning evidence, not model-created consent.
+
+Four immutable record boundaries provide distinct source IDs per scenario.
+Run/runtime/transport/tool scope must match; cross-scenario arguments fail
+before execution. Same three selectable specialists plus Coordinator; no
+new tool, agent, retry, hosting, dependency or cloud control.
+For the additional cases only, canonical records explicitly supplied to the
+Coordinator enter its ledger, so selective dispatch does not make a genuinely
+supplied policy citation fail. Specialists retain executed-tool-only citation
+guards. This is canonical data supply, not a fake tool call or extra inference.
+
+Existing no-review branch is retained, not replaced by a scripted verdict:
+at least one needed specialist, complete cited join/proposal, effectively
+positive Decision-1 validation, no selection uncertainty/unknowns/conflicts
+or approval handoffs. Output is advisory_complete / plan ready for responsible
+owners, not executed, accepted by a customer, or safety-certified. All-three
+batched-read illustrative initial path is7 GPT+2 Decision-1, not a live promise.
+
+Host canonical checks reconcile material/finished-stock demand, setup/rate/
+staffed minutes, reservations, qualification, ready/pickup/cutoff/arrival/window,
+approved carrier and freight authority, and documented customer request.
+Unsupported evidence or policy requires review even with positive validation.
+No quality hold, suspect shipment or mandatory Quality notification is fabricated
+on healthy cases. Typed action enums and preserved dependency flags cover
+alternative carrier/cell, pull-forward, overtime and displacement; no keyword
+guessing from prose. Unquoted premium/alternative service needs freight review.
+
+Generic human review offers explicit escalation/pending, with no model refresh
+or actual contact. The existing customer-window clarification is quality-only;
+it cannot resolve generic missing carrier, qualification, capacity or approval
+evidence. Quality's single affected-role continuation and all budgets remain.
+
 ## User-directed synthetic case
 
 Freeze a Thursday2026-10-15 14:00 UTC-05:00 snapshot. Fictional Tier-2 stamped
@@ -64,7 +122,10 @@ resource changes. HTTPS resource-root validation, no redirects, close clients.
 
 Strict frozen Pydantic records reject extras, coercion, negative/invalid
 quantities and unsupported scenario/tool IDs. Four existing read-only tools
-accept only `scenario_id: Literal["quality-hold-v2"]`:
+accept one of four typed scenario IDs, bound to the selected runtime/record
+(`quality-hold-v2`, `carrier-delay-v2`, `production-resequence-v2`,
+`order-pull-forward-v2`). Both transport and function middleware reject a
+different scenario before tool execution:
 
 | Tool | Evidence | Allowlist |
 | --- | --- | --- |

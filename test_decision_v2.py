@@ -18,6 +18,7 @@ from decision_v2.contracts import (
 )
 from decision_v2.fixtures import (
     fixture_records, policy_requirements, delivery_position, validate_delivery_change,
+    EXAMPLES, operational_checks, operational_position, issue_id,
 )
 from decision_v2.runtime import Budget, Config, GuardedTransport
 from decision_v2.runtime import AzureRuntime, DecisionClient, DECISION_SCOPE, LLM_SCOPE
@@ -324,39 +325,54 @@ class MockFoundry:
             return httpx.Response(200, json=choice_payload(body["questions"], self.selections))
         data = json.loads(next(m["content"] for m in body["messages"] if m["role"] == "user"))
         actor = data["actor"]
+        scenario = data["scenario_id"]
+        records = fixture_records(scenario)
+        quality = scenario == SCENARIO_ID
+        action = {
+            SCENARIO_ID: "gather_information", "carrier-delay-v2": "switch_approved_carrier",
+            "production-resequence-v2": "use_qualified_cell", "order-pull-forward-v2": "accept_requested_window",
+        }[scenario]
         tool_messages = [m for m in body["messages"] if m["role"] == "tool"]
         if actor != "coordinator" and not tool_messages:
             return httpx.Response(200, json=completion({
                 "content": None, "tool_calls": [{
                     "id": f"tool-{i}", "type": "function",
-                    "function": {"name": name, "arguments": json.dumps({"scenario_id": SCENARIO_ID})},
+                    "function": {"name": name, "arguments": json.dumps({"scenario_id": scenario})},
                 } for i, name in enumerate(ALLOWLIST[actor])],
             }, "tool_calls"))
         if actor == "coordinator":
             findings = data["findings"]
             output = {
-                "revision": data["revision"], "recommended_action": "gather_information",
+                "revision": data["revision"], "recommended_action": action,
                 "uses_held_stock": any(f["uses_held_stock"] for f in findings),
                 "uses_expedited_freight": any(f["uses_expedited_freight"] for f in findings),
                 "containment_required": all(f["containment_required"] for f in findings),
                 "changes_customer_commitment": any(f["changes_customer_commitment"] for f in findings),
-                "brief": "Advisory: establish remaining evidence; no authority or actions granted.",
+                "brief": ("Advisory: establish remaining evidence; no authority or actions granted." if quality else
+                          "Advisory: the documented option preserves delivery windows, existing authority and other orders; no actions performed."),
                 "finding_refs": [{"agent_id": f["agent_id"], "revision": f["revision"]} for f in findings],
                 "evidence_ids": sorted({e for f in findings for e in f["evidence_ids"]}),
                 "unknown_keys": sorted({e for f in findings for e in f["unknown_keys"]}),
                 "approval_requests": sorted({e for f in findings for e in f["approval_requests"]}),
                 "conflicts": [c for f in findings for c in f["conflicts"]],
             }
+            for key in ("uses_alternative_carrier", "uses_alternative_cell", "pulls_order_forward",
+                        "requires_overtime", "displaces_other_orders"):
+                output[key] = any(f.get(key, False) for f in findings)
         else:
-            filled = [e["evidence_id"] for e in data["human_evidence"] if e["key"] in domain_unknowns(actor)]
+            filled = [e["evidence_id"] for e in data["human_evidence"] if e["key"] in domain_unknowns(actor, scenario)]
             output = {
                 "agent_id": actor, "revision": data["revision"],
-                "uses_held_stock": False, "uses_expedited_freight": False, "containment_required": True,
+                "uses_held_stock": False, "uses_expedited_freight": False, "containment_required": quality,
+                "uses_alternative_carrier": scenario == "carrier-delay-v2",
+                "uses_alternative_cell": scenario == "production-resequence-v2",
+                "pulls_order_forward": scenario == "order-pull-forward-v2",
                 "changes_customer_commitment": any(e["value"]["customer_agreed"] for e in data["human_evidence"]),
                 "assessment": "Synthetic evidence assessed; no authority granted.",
-                "implication": "Released stock alone cannot satisfy the original second delivery; containment persists.",
-                "recommended_action": "gather_information",
-                "evidence_ids": [*(fixture_records()[name].evidence_id for name in ALLOWLIST[actor]), *filled],
+                "implication": ("Released stock alone cannot satisfy the original second delivery; containment persists."
+                                if quality else "The documented option supports planning without new authority or execution."),
+                "recommended_action": action,
+                "evidence_ids": [*(records[name].evidence_id for name in ALLOWLIST[actor]), *filled],
                 "unknown_keys": data["required_unknown_keys"], "approval_requests": [],
                 "conflicts": data["previous_conflicts"],
             }
@@ -364,7 +380,7 @@ class MockFoundry:
 
 
 class FrameworkAgentTests(unittest.IsolatedAsyncioTestCase):
-    def make_runtime(self, service=None):
+    def make_runtime(self, service=None, scenario_id=SCENARIO_ID):
         self.service = service or MockFoundry()
         self.credential = FakeCredential()
         self.now = [0.]
@@ -374,6 +390,7 @@ class FrameworkAgentTests(unittest.IsolatedAsyncioTestCase):
             Config("https://example.services.ai.azure.com", "decision-deployment", "gpt-deployment"),
             Budget(clock=lambda: self.now[0], sleep=sleep),
             credential=self.credential, transport=httpx.MockTransport(self.service),
+            scenario_id=scenario_id,
         )
         self.addAsyncCleanup(self.runtime.aclose)
         return self.runtime
@@ -506,7 +523,7 @@ class FrameworkAgentTests(unittest.IsolatedAsyncioTestCase):
             raise ValueError("synthetic fixture failure")
         runtime = self.make_runtime()
         with patch("decision_v2.agents.fixture_tool",
-                   side_effect=lambda name: broken if name == "read_inventory" else fixture_tool(name)):
+                   side_effect=lambda name, scenario: broken if name == "read_inventory" else fixture_tool(name, scenario)):
             with self.assertRaises(DemoError):
                 await ExpertTeam(runtime).assess("supply-chain", RunState(evidence=initial_evidence()))
         self.assertEqual(runtime.budget.counts["gpt"], 1)
@@ -809,6 +826,350 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(fixture_records()["read_approval_policy"].planner_limit_usd, 2500)
         self.assertEqual(state.overlays[0].source, "human_clarification")
         self.assertFalse(any(e.type == "request_info" for e in resumed))
+
+
+class ScenarioTests(unittest.IsolatedAsyncioTestCase):
+    make_runtime = FrameworkAgentTests.make_runtime
+    scenarios = ("carrier-delay-v2", "production-resequence-v2", "order-pull-forward-v2")
+
+    async def first_run(self, scenario, service=None):
+        runtime = self.make_runtime(service, scenario_id=scenario)
+        state = RunState(scenario_id=scenario, evidence=initial_evidence(scenario))
+        workflow = build_workflow(ExpertTeam(runtime), DecisionClient(runtime), runtime.budget, lambda line: None)
+        events = [event async for event in workflow.run(state, stream=True)]
+        return runtime, state, workflow, events
+
+    def test_independent_immutable_records_and_canonical_arithmetic(self):
+        ids = set()
+        for scenario in self.scenarios:
+            records = fixture_records(scenario)
+            self.assertEqual(set(records), {"read_inventory", "read_build", "read_shipment", "read_approval_policy"})
+            self.assertTrue(all(record.scenario_id == scenario and record.source == "synthetic_fixture"
+                                for record in records.values()))
+            self.assertTrue(all(operational_checks(records).values()))
+            self.assertFalse(ids & {record.evidence_id for record in records.values()})
+            ids.update(record.evidence_id for record in records.values())
+            with self.assertRaises(ValidationError):
+                records["read_inventory"].released_units = 999
+            with self.assertRaises(TypeError):
+                records["read_build"] = None
+        carrier = fixture_records(self.scenarios[0])
+        self.assertEqual(carrier["read_shipment"].freight_cost_usd, 900)
+        self.assertLess(900, carrier["read_approval_policy"].planner_limit_usd)
+        self.assertEqual(operational_position(carrier)["arrival_at"], "2026-10-16T09:30:00-05:00")
+        production = operational_position(fixture_records(self.scenarios[1]))
+        self.assertEqual((production["available_stock_units"], production["demand_units"]), (100, 500))
+        self.assertEqual((production["production_minutes"], production["available_cell_minutes"]), (180, 240))
+        self.assertEqual(production["ready_at"], "2026-10-15T18:30:00-05:00")
+        pull = operational_position(fixture_records(self.scenarios[2]))
+        self.assertEqual((pull["available_stock_units"], pull["demand_units"]), (160, 400))
+        self.assertEqual((pull["available_material_units"], pull["production_minutes"], pull["available_cell_minutes"]),
+                         (400, 150, 180))
+        self.assertEqual(pull["ready_at"], "2026-10-15T18:00:00-05:00")
+        self.assertEqual(pull["arrival_at"], "2026-10-16T10:00:00-05:00")
+
+    async def test_all_three_supported_cases_use_real_tools_and_complete_without_human_request(self):
+        for scenario in self.scenarios:
+            with self.subTest(scenario=scenario):
+                runtime, state, workflow, events = await self.first_run(scenario)
+                self.assertFalse(any(event.type == "request_info" for event in events))
+                result = next(event.data for event in events if event.type == "output")
+                self.assertEqual((result.status, result.code), ("advisory_complete", 0))
+                self.assertEqual(state.active, list(AGENTS))
+                self.assertEqual(state.policies, [])
+                self.assertEqual(state.proposal.unknown_keys, [])
+                self.assertFalse(state.proposal.containment_required)
+                self.assertEqual(runtime.budget.counts, {"gpt": 7, "decision": 2})
+                self.assertEqual(set(state.evidence), {issue_id(scenario), *(
+                    record.evidence_id for record in fixture_records(scenario).values()
+                )})
+                for actor in AGENTS:
+                    self.assertEqual(runtime.budget.tools[(actor, 0)], set(ALLOWLIST[actor]))
+                    self.assertTrue(set(state.findings[actor].evidence_ids).issubset(state.evidence))
+                selection = self.service.requests[0][1]
+                self.assertEqual(set(selection["questions"]),
+                                 {"supply_chain_needed", "production_needed", "commercial_needed"})
+                self.assertEqual(selection["state"]["scenario_id"], scenario)
+                validation = self.service.requests[-1][1]
+                self.assertEqual(validation["state"]["fixture"]["read_build"]["scenario_id"], scenario)
+                gpt = [body for request, body in self.service.requests if request.url.path.endswith("/chat/completions")]
+                self.assertTrue(all(json.loads(next(message["content"] for message in body["messages"]
+                                                   if message["role"] == "user"))["scenario_id"] == scenario for body in gpt))
+
+    async def test_healthy_terminal_does_not_call_response_reader_or_print_quality_handoffs(self):
+        for scenario in self.scenarios:
+            runtime = self.make_runtime(scenario_id=scenario)
+            trace = []
+            async def forbidden(request):
+                self.fail("Healthy positive-validated case must not ask for human input.")
+            result = await run_demo(runtime, forbidden, trace.append)
+            output = " ".join(trace)
+            self.assertEqual(result.code, 0)
+            self.assertIn("Plan ready", output)
+            for phrase in ("HUMAN CLARIFICATION", "Quality-held", "Quality retains", "Mandatory approval",
+                           "original second-window shortfall", "request_id="):
+                self.assertNotIn(phrase, output)
+
+    async def test_production_can_select_only_the_needed_role(self):
+        service = MockFoundry({"supply_chain_needed": "not_needed", "commercial_needed": "not_needed"})
+        runtime, state, workflow, events = await self.first_run("production-resequence-v2", service)
+        self.assertEqual(state.active, ["production"])
+        self.assertEqual(runtime.budget.counts, {"gpt": 3, "decision": 2})
+        self.assertFalse(any(event.type == "request_info" for event in events))
+        self.assertEqual(next(event.data.status for event in events if event.type == "output"), "advisory_complete")
+
+    async def test_coordinator_can_cite_supplied_canonical_policy_with_only_production_selected(self):
+        service = MockFoundry({"supply_chain_needed": "not_needed", "commercial_needed": "not_needed"})
+        base = MockFoundry(service.selections)
+        policy_id = fixture_records("production-resequence-v2")["read_approval_policy"].evidence_id
+        def cite(request, body):
+            response = base(request)
+            if request.url.path.endswith("/chat/completions"):
+                payload = response.json()
+                message = payload["choices"][0]["message"]
+                if message.get("content"):
+                    record = json.loads(message["content"])
+                    if "finding_refs" in record:
+                        record["evidence_ids"].append(policy_id)
+                        message["content"] = json.dumps(record)
+                        return httpx.Response(200, json=payload)
+            return response
+        service.override = cite
+        runtime, state, workflow, events = await self.first_run("production-resequence-v2", service)
+        self.assertIn(policy_id, state.proposal.evidence_ids)
+        self.assertIn(policy_id, state.evidence)
+        self.assertEqual(sum(map(len, runtime.budget.tools.values())), 2)
+        self.assertEqual(runtime.budget.counts, {"gpt": 3, "decision": 2})
+        self.assertFalse(any(event.type == "request_info" for event in events))
+
+    async def test_negative_uncertain_and_low_probability_validation_pause_not_success(self):
+        for scenario in self.scenarios:
+            for verdict in ("Needs revision", "Cannot determine", "low probability"):
+                service = MockFoundry({"validation": verdict} if verdict != "low probability" else None)
+                if verdict == "low probability":
+                    def low(request, body):
+                        if "validation" in body.get("questions", {}):
+                            payload = choice_payload(body["questions"])
+                            payload["answers"]["validation"]["probabilities"] = {
+                                "Addresses the issue": .5, "Needs revision": .4, "Cannot determine": .1,
+                            }
+                            return httpx.Response(200, json=payload)
+                    service.override = low
+                runtime, state, workflow, events = await self.first_run(scenario, service)
+                request = next(event for event in events if event.type == "request_info")
+                self.assertEqual(request.data.allowed_keys, ())
+                self.assertEqual(request.data.scenario_id, scenario)
+                self.assertFalse(any(event.type == "output" for event in events))
+                before = dict(runtime.budget.counts)
+                resumed = [event async for event in workflow.run(stream=True, responses={
+                    request.request_id: HumanResponse(kind="escalate"),
+                })]
+                self.assertEqual(next(event.data.status for event in resumed if event.type == "output"), "escalated")
+                self.assertEqual(runtime.budget.counts, before)
+
+    async def test_selection_uncertainty_does_not_dispatch_or_offer_quality_menu(self):
+        for scenario in self.scenarios:
+            runtime, state, workflow, events = await self.first_run(
+                scenario, MockFoundry({"supply_chain_needed": "cannot_determine"}),
+            )
+            request = next(event.data for event in events if event.type == "request_info")
+            self.assertEqual(request.allowed_keys, ())
+            self.assertEqual(runtime.budget.counts["gpt"], 0)
+            self.assertEqual(runtime.budget.counts["decision"], 1)
+            with patch("sys.stdin.isatty", return_value=True), \
+                    patch("decision_v2.cli.read_terminal_line", return_value="2"), \
+                    contextlib.redirect_stdout(io.StringIO()) as output:
+                response = await read_terminal(request)
+            self.assertEqual(response.kind, "escalate")
+            self.assertNotIn("Record customer response", output.getvalue())
+
+    async def test_missing_evidence_and_policy_failures_handoff_even_with_positive_model_validation(self):
+        cases = (
+            ("carrier-delay-v2", "read_shipment", {"slot_confirmed": False}, "freight_authority"),
+            ("carrier-delay-v2", "read_shipment", {"transit_minutes": 1500}, "customer_commitment"),
+            ("carrier-delay-v2", "read_shipment", {"booking_cutoff": "2026-10-15T13:00:00-05:00"}, "customer_commitment"),
+            ("carrier-delay-v2", "read_shipment", {"freight_cost_usd": 2600}, "freight_authority"),
+            ("carrier-delay-v2", "read_shipment", {"approved_carrier": False}, "freight_authority"),
+            ("production-resequence-v2", "cell", {"qualification_reference": None}, "production_authority"),
+            ("production-resequence-v2", "cell", {"units_per_hour": 100}, "production_authority"),
+            ("production-resequence-v2", "read_inventory", {"released_material_units": 399}, "production_authority"),
+            ("order-pull-forward-v2", "read_approval_policy", {"customer_request_reference": None}, "customer_commitment"),
+            ("order-pull-forward-v2", "cell", {"reserved_minutes_other_orders": 180}, "production_authority"),
+        )
+        for scenario, name, change, approval in cases:
+            with self.subTest(scenario=scenario, change=change):
+                records = dict(fixture_records(scenario))
+                if name == "cell":
+                    records["read_build"] = records["read_build"].model_copy(update={
+                        "cell": records["read_build"].cell.model_copy(update=change),
+                    })
+                else:
+                    records[name] = records[name].model_copy(update=change)
+                with patch("decision_v2.fixtures.operational_records", return_value=records):
+                    runtime, state, workflow, events = await self.first_run(scenario)
+                self.assertIn(approval, state.policies)
+                self.assertNotIn("quality_containment", state.policies)
+                self.assertTrue(any(event.type == "request_info" for event in events))
+                self.assertFalse(any(event.type == "output" for event in events))
+
+    async def test_reported_overtime_displacement_and_missing_dependency_are_not_accepted(self):
+        for field, approval in (("requires_overtime", "production_authority"),
+                                ("displaces_other_orders", "customer_commitment"),
+                                ("uses_expedited_freight", "freight_authority"),
+                                ("uses_alternative_carrier", "freight_authority"),
+                                ("containment_required", "quality_containment")):
+            service, base = MockFoundry(), MockFoundry()
+            def alter(request, body):
+                response = base(request)
+                if request.url.path.endswith("/chat/completions"):
+                    payload = response.json()
+                    message = payload["choices"][0]["message"]
+                    if message.get("content"):
+                        record = json.loads(message["content"])
+                        record[field] = True
+                        message["content"] = json.dumps(record)
+                        return httpx.Response(200, json=payload)
+                return response
+            service.override = alter
+            runtime, state, workflow, events = await self.first_run("order-pull-forward-v2", service)
+            self.assertIn(approval, state.policies)
+            self.assertTrue(any(event.type == "request_info" for event in events))
+        service, base = MockFoundry(), MockFoundry()
+        def omit(request, body):
+            response = base(request)
+            if request.url.path.endswith("/chat/completions"):
+                payload = response.json()
+                message = payload["choices"][0]["message"]
+                if message.get("content"):
+                    record = json.loads(message["content"])
+                    record["requires_overtime"] = "agent_id" in record
+                    message["content"] = json.dumps(record)
+                    return httpx.Response(200, json=payload)
+            return response
+        service.override = omit
+        with self.assertRaises(DemoError):
+            await self.first_run("order-pull-forward-v2", service)
+
+    async def test_cross_scenario_tool_arguments_blocked_before_fixture_execution(self):
+        runtime = self.make_runtime(scenario_id="carrier-delay-v2")
+        def wrong(request, body):
+            if request.url.path.endswith("/chat/completions"):
+                return httpx.Response(200, json=completion({"content": None, "tool_calls": [{
+                    "id": "wrong-scenario", "type": "function", "function": {
+                        "name": "read_inventory", "arguments": json.dumps({"scenario_id": SCENARIO_ID}),
+                    },
+                }]}, "tool_calls"))
+        self.service.override = wrong
+        state = RunState(scenario_id="carrier-delay-v2", evidence=initial_evidence("carrier-delay-v2"))
+        with self.assertRaises(DemoError):
+            await ExpertTeam(runtime).assess("supply-chain", state)
+        self.assertEqual(runtime.budget.counts["gpt"], 1)
+        self.assertFalse(any(runtime.budget.tools.values()))
+        self.assertEqual(set(state.evidence), {issue_id("carrier-delay-v2")})
+
+    async def test_generic_review_cannot_accept_quality_window_clarification(self):
+        for scenario in self.scenarios:
+            runtime, state, workflow, events = await self.first_run(
+                scenario, MockFoundry({"validation": "Needs revision"}),
+            )
+            request = next(event for event in events if event.type == "request_info")
+            before = dict(runtime.budget.counts)
+            resumed = [event async for event in workflow.run(stream=True, responses={
+                request.request_id: customer_response(),
+            })]
+            result = next(event.data for event in resumed if event.type == "output")
+            self.assertEqual((result.status, result.code), ("pending", 2))
+            self.assertEqual(runtime.budget.counts, before)
+            self.assertEqual(state.overlays, [])
+            with self.assertRaises(DemoError):
+                parse_terminal_response("240 | 2026-10-17 08:00 | note", request.data)
+
+    async def test_model_unknown_conflict_or_approval_prevents_no_review_completion(self):
+        for key in ("unknown_keys", "conflicts", "approval_requests"):
+            service, base = MockFoundry(), MockFoundry()
+            def alter(request, body):
+                response = base(request)
+                if request.url.path.endswith("/chat/completions"):
+                    payload = response.json()
+                    message = payload["choices"][0]["message"]
+                    if message.get("content"):
+                        record = json.loads(message["content"])
+                        if "agent_id" in record:
+                            record[key] = (
+                                ["delivery_window"] if key == "unknown_keys" else
+                                ["customer_commitment"] if key == "approval_requests" else
+                                [{"subject_key": "delivery_window", "evidence_ids": [record["evidence_ids"][0]],
+                                  "description": "Model interpretation of the dispatch timing remains disputed."}]
+                            )
+                            message["content"] = json.dumps(record)
+                            return httpx.Response(200, json=payload)
+                return response
+            service.override = alter
+            runtime, state, workflow, events = await self.first_run("carrier-delay-v2", service)
+            self.assertTrue(getattr(state.proposal, key))
+            self.assertTrue(any(event.type == "request_info" for event in events))
+            self.assertFalse(any(event.type == "output" for event in events))
+
+    async def test_scenario_mismatch_blocks_before_any_model_call(self):
+        runtime = self.make_runtime(scenario_id="carrier-delay-v2")
+        wrong = RunState(scenario_id="production-resequence-v2")
+        with self.assertRaises(DemoError):
+            await ExpertTeam(runtime).assess("production", wrong)
+        with self.assertRaises(DemoError):
+            await DecisionClient(runtime).select(wrong)
+        self.assertEqual(sum(runtime.budget.counts.values()), 0)
+        self.assertEqual(self.credential.scopes, [])
+
+    async def test_explicit_model_review_actions_preserve_handoff_within_numeric_authority(self):
+        for action, approval in (("seek_freight_approval", "freight_authority"),
+                                 ("request_customer_window", "customer_commitment")):
+            service, base = MockFoundry(), MockFoundry()
+            def alter(request, body):
+                response = base(request)
+                if request.url.path.endswith("/chat/completions"):
+                    payload = response.json()
+                    message = payload["choices"][0]["message"]
+                    if message.get("content"):
+                        record = json.loads(message["content"])
+                        record["recommended_action"] = action
+                        message["content"] = json.dumps(record)
+                        return httpx.Response(200, json=payload)
+                return response
+            service.override = alter
+            runtime, state, workflow, events = await self.first_run("carrier-delay-v2", service)
+            self.assertIn(approval, state.policies)
+            self.assertTrue(any(event.type == "request_info" for event in events))
+
+    def test_cli_selectors_forward_the_exact_scenario_and_preserve_alias(self):
+        config = Config("https://example.services.ai.azure.com", "decision", "gpt")
+        for example, scenario in EXAMPLES.items():
+            with patch("decision_v2.cli.Config.from_args", return_value=config), \
+                    patch("decision_v2.cli.live_run", return_value=0) as live:
+                self.assertEqual(main(["--example", example]), 0)
+            live.assert_awaited_once_with(config, verbose=False, scenario_id=scenario)
+        self.assertEqual(EXAMPLES["quality-hold"], EXAMPLES["supply-chain"])
+
+    def test_complete_cli_runs_all_new_selectors_with_actual_framework_offline_transport(self):
+        config = Config("https://example.services.ai.azure.com", "decision", "gpt")
+        for example in ("carrier-delay", "production-resequence", "order-pull-forward"):
+            created = []
+            credential = FakeCredential()
+            def runtime_factory(config, budget, **kwargs):
+                runtime = AzureRuntime(config, budget, credential=credential,
+                                       transport=httpx.MockTransport(MockFoundry()), **kwargs)
+                created.append(runtime)
+                return runtime
+            with patch("decision_v2.cli.Config.from_args", return_value=config), \
+                    patch("decision_v2.cli.AzureRuntime", side_effect=runtime_factory), \
+                    patch("sys.stdin.isatty", return_value=False), \
+                    contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(main(["--example", example]), 0)
+            self.assertEqual(created[0].scenario_id, EXAMPLES[example])
+            self.assertEqual(created[0].budget.counts, {"gpt": 7, "decision": 2})
+            self.assertIn("Plan ready", output.getvalue())
+            self.assertNotIn("HUMAN CLARIFICATION", output.getvalue())
+            self.assertTrue(created[0].http.is_closed)
+            self.assertTrue(credential.closed)
 
 
 class TerminalTests(unittest.IsolatedAsyncioTestCase):

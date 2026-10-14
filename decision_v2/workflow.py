@@ -6,7 +6,7 @@ from agent_framework import (
 
 from .agents import ExpertTeam
 from .contracts import (
-    AGENTS, AFFECTED, ClarificationRequest, DemoError, FinalResult, HumanEvidence,
+    AGENTS, AFFECTED, SCENARIO_ID, ClarificationRequest, DemoError, FinalResult, HumanEvidence,
     HumanResponse, RunState, affected_agents,
 )
 from .fixtures import fixture_records, policy_requirements, validate_delivery_change
@@ -77,7 +77,7 @@ class ValidationExecutor(Executor):
         state.validation = await self.decision.validate(state)
         self.presenter.choice("Decision-1 proposal validation (not execution)", state.validation)
         state.policies = policy_requirements(
-            state.proposal, fixture_records(),
+            state.proposal, fixture_records(state.scenario_id),
             customer_changed=any(e.value.customer_agreed for e in state.overlays),
         )
         await ctx.send_message(state)
@@ -123,13 +123,16 @@ class ReviewExecutor(Executor):
         if state.continuation_used:
             await ctx.yield_output(FinalResult("handoff", 2, tuple(reasons), state.proposal))
             return
-        allowed = set(state.proposal.unknown_keys if state.proposal else ()) & set(AFFECTED)
-        for actor in state.uncertain:
-            allowed.update(k for k, actors in AFFECTED.items() if actor in actors)
+        allowed = set()
+        if state.scenario_id == SCENARIO_ID:
+            allowed = set(state.proposal.unknown_keys if state.proposal else ()) & set(AFFECTED)
+            for actor in state.uncertain:
+                allowed.update(k for k, actors in AFFECTED.items() if actor in actors)
         request = ClarificationRequest(
             revision=state.revision, allowed_keys=tuple(sorted(allowed)),
             uncertain_agents=tuple(state.uncertain), reasons=tuple(reasons),
             proposal=state.proposal, request_id="clarify-" + uuid4().hex,
+            scenario_id=state.scenario_id,
         )
         self.pending_state, self.pending_request = state, request
         self.presenter.review(state, reasons, request)
@@ -189,7 +192,7 @@ class ReviewExecutor(Executor):
 
 
 def build_workflow(team: ExpertTeam, decision: DecisionClient, budget: Budget, trace, *, presenter=None):
-    presenter = presenter or Presenter(trace)
+    presenter = presenter or Presenter(trace, scenario_id=team.runtime.scenario_id)
     budget.trace = presenter.diagnostic
     select = SelectionExecutor(decision, presenter)
     experts = ExpertsExecutor(team, presenter)

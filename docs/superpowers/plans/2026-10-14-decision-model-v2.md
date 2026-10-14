@@ -247,3 +247,33 @@ preserved `--example supply-chain` alias), optionally `--verbose`.
 Verification: 94 offline tests (34 unchanged v1, 60 v2), CLI help, dependency
 consistency and diff checks pass. No live inference, external contact, push or
 merge performed. The branch and native worktree remain local.
+
+## User-directed three additional cases
+
+- [x] Add immutable carrier-delay, production-resequence and order-pull-forward
+  records with coherent quantity/material/rate/cutoff/arrival/customer-reference
+  checks. Preserve the quality-hold dataset and supply-chain alias.
+- [x] Bind scenario identity through CLI, actual agents/tools, transport,
+  Decision-1 context, policy and presentation. Reuse the existing no-review
+  completion branch; remove quality-only requirements from healthy cases,
+  not model-generated uncertainty or mandatory policy handoffs.
+- [x] Preserve typed carrier/cell/pull-forward/overtime/displacement dependencies.
+  Generic review offers pending/escalation rather than accepting inappropriate
+  quality-window evidence. All runtime quotas, retries, auth and tools retained.
+- [x] Exercise actual framework with fake provider for positive no-review,
+  selective dispatch, negative/uncertain/low-probability scoring, canonical
+  unsupported evidence/policy, model unknowns/conflicts/approvals, dependency
+  loss and cross-scenario rejection. Update startup documentation.
+
+No-review success existed before this change; the new canonical evidence and
+scenario-scoped policies allow it without forcing success. No live model run,
+real operational/customer write, dependency/feed change, v1/site edit or
+push/merge is authorized by this revision.
+
+Verification: 110 offline tests (34 unchanged v1, 76 v2) pass, including full CLI
+execution for every new selector with real framework and fake Azure transport.
+Positive supported cases emit no request_info; policy/unknown/conflict/negative
+paths pause, and generic customer-window updates are rejected without calls.
+Selective Production-only synthesis can cite canonical policy supplied in its
+ledger without an extra tool/model call. Offline terminal preview, help,
+dependency consistency and diff checks pass. Live behavior remains untested.

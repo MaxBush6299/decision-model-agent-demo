@@ -9,17 +9,22 @@ AGENTS = ("supply-chain", "production", "commercial")
 SELECTION_OPTIONS = ("needed", "not_needed", "cannot_determine")
 VALIDATION_OPTIONS = ("Addresses the issue", "Needs revision", "Cannot determine")
 SCENARIO_ID = "quality-hold-v2"
+ScenarioId = Literal["quality-hold-v2", "carrier-delay-v2", "production-resequence-v2", "order-pull-forward-v2"]
+SCENARIO_IDS = ("quality-hold-v2", "carrier-delay-v2", "production-resequence-v2", "order-pull-forward-v2")
 ISSUE_ID = "issue:quality-hold-v2"
 THRESHOLD = .70
 AgentId = Literal["supply-chain", "production", "commercial"]
 Action = Literal[
     "seek_freight_approval", "expedite_freight", "resequence_build",
     "contain_and_recover", "request_customer_window", "gather_information",
+    "switch_approved_carrier", "use_qualified_cell", "accept_requested_window",
 ]
-Approval = Literal["freight_authority", "quality_containment", "customer_notification", "customer_commitment"]
+Approval = Literal["freight_authority", "quality_containment", "customer_notification", "customer_commitment", "production_authority"]
 UnknownKey = Literal[
     "shipment_arrival", "incoming_acceptance", "customer_disposition",
     "customer_delivery_change", "proposal_feedback",
+    "carrier_confirmation", "delivery_window", "production_capacity", "qualified_cell",
+    "material_allocation", "customer_request", "other_order_impact",
 ]
 Text = Annotated[str, Field(min_length=1, max_length=2000)]
 EvidenceId = Annotated[str, Field(min_length=1, max_length=120)]
@@ -129,7 +134,15 @@ class FindingRef(StrictModel):
         return value
 
 
-class ExpertFinding(StrictModel):
+class PlanDependencies(StrictModel):
+    uses_alternative_carrier: bool = False
+    uses_alternative_cell: bool = False
+    pulls_order_forward: bool = False
+    requires_overtime: bool = False
+    displaces_other_orders: bool = False
+
+
+class ExpertFinding(PlanDependencies):
     agent_id: AgentId
     revision: Literal[0, 1]
     assessment: Annotated[str, Field(min_length=1, max_length=500)]
@@ -150,7 +163,7 @@ class ExpertFinding(StrictModel):
         return FindingRef.integer_revision(value)
 
 
-class CoordinatedProposal(StrictModel):
+class CoordinatedProposal(PlanDependencies):
     revision: Literal[0, 1]
     recommended_action: Action
     uses_held_stock: bool
@@ -229,6 +242,7 @@ class ClarificationRequest:
     reasons: tuple[str, ...]
     proposal: CoordinatedProposal | None
     request_id: str = ""
+    scenario_id: ScenarioId = SCENARIO_ID
 
 
 @dataclass(frozen=True)
@@ -253,6 +267,7 @@ class RunState:
     evidence: dict[str, dict] = field(default_factory=dict)
     continuation_used: bool = False
     refresh: list[str] = field(default_factory=list)
+    scenario_id: ScenarioId = SCENARIO_ID
 
 
 def affected_agents(response: HumanResponse, active: list[str], uncertain: list[str]) -> list[str]:
@@ -279,9 +294,12 @@ def validate_proposal(proposal: CoordinatedProposal, state: RunState) -> None:
         raise DemoError("Coordinator omitted or duplicated a participating finding.")
     validate_references(proposal, set(state.evidence))
     findings = [state.findings[a] for a in state.active]
-    if proposal.uses_held_stock or not proposal.containment_required:
+    if proposal.uses_held_stock or (state.scenario_id == SCENARIO_ID and not proposal.containment_required):
         raise DemoError("Coordinator cannot release held stock or omit shipped-lot containment.")
-    for field_name in ("containment_required", "uses_expedited_freight", "changes_customer_commitment"):
+    for field_name in (
+        "containment_required", "uses_expedited_freight", "changes_customer_commitment",
+        *PlanDependencies.model_fields,
+    ):
         if any(getattr(f, field_name) for f in findings) and not getattr(proposal, field_name):
             raise DemoError(f"Coordinator omitted a material {field_name} requirement.")
     for field_name in ("unknown_keys", "approval_requests"):
