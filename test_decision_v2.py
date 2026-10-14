@@ -1172,6 +1172,121 @@ class ScenarioTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(credential.closed)
 
 
+class RoutingTests(unittest.IsolatedAsyncioTestCase):
+    make_runtime = FrameworkAgentTests.make_runtime
+    first_run = ScenarioTests.first_run
+
+    async def test_reported_carrier_choices_preserve_uncertainty_without_downstream_calls(self):
+        service = MockFoundry()
+        # Only rounded chosen scores/confidences were supplied; residuals below are synthetic.
+        reported = {
+            "supply_chain_needed": ("needed", .898, .85),
+            "production_needed": ("not_needed", .662, .49),
+            "commercial_needed": ("not_needed", .475, .21),
+        }
+        def transcript(request, body):
+            if "questions" in body:
+                answers = {}
+                for name, question in body["questions"].items():
+                    selected, probability, confidence = reported[name]
+                    scores = {key: (1 - probability) / 2 for key in question["criteria"]}
+                    scores[selected] = probability
+                    answers[name] = {"type": "choice", "choice": selected, "probabilities": scores,
+                                     "confidence": confidence}
+                return httpx.Response(200, json={"answers": answers})
+        service.override = transcript
+        runtime, state, workflow, events = await self.first_run("carrier-delay-v2", service)
+        self.assertEqual(state.active, ["supply-chain"])
+        self.assertEqual(state.uncertain, ["production", "commercial"])
+        self.assertEqual(state.selections["production"].selected, "not_needed")
+        self.assertEqual(state.selections["production"].probabilities["not_needed"], .662)
+        self.assertEqual(state.selections["production"].confidence, .49)
+        self.assertEqual(state.selections["commercial"].probabilities["not_needed"], .475)
+        self.assertEqual(state.selections["commercial"].confidence, .21)
+        self.assertEqual(runtime.budget.counts["decision"], 1)
+        self.assertEqual(runtime.budget.counts["gpt"], 0)
+        self.assertEqual(len(service.requests), 1)
+        self.assertEqual(state.findings, {})
+        self.assertIsNone(state.proposal)
+        request = next(event.data for event in events if event.type == "request_info")
+        self.assertEqual(request.allowed_keys, ())
+        self.assertFalse(any(event.type == "output" for event in events))
+
+    async def test_selection_payload_distinguishes_nonapplicable_fields_from_missing_evidence(self):
+        runtime = self.make_runtime(scenario_id="carrier-delay-v2")
+        await DecisionClient(runtime).select(RunState(scenario_id="carrier-delay-v2"))
+        body = self.service.requests[0][1]
+        self.assertEqual(body["state"]["fixture"]["read_inventory"]["released_units"], 600)
+        self.assertEqual(body["state"]["fixture"]["read_shipment"]["freight_cost_usd"], 900)
+        self.assertEqual(body["state"]["fixture"]["read_approval_policy"]["planner_limit_usd"], 2500)
+        self.assertEqual(body["state"]["fixture"]["read_build"]["finished_ready_at"], "2026-10-15T13:30:00-05:00")
+        self.assertIn("routing_context", body["state"])
+        context = body["state"]["routing_context"]
+        self.assertEqual(context["applicability"], {"qualified_cell": False, "customer_pull_forward_request": False})
+        self.assertEqual(context["known_unknowns_by_role"], {"supply-chain": [], "production": [], "commercial": []})
+        self.assertEqual(context["position"]["arrival_at"], "2026-10-16T09:30:00-05:00")
+        self.assertTrue(all(context["checks"].values()))
+        self.assertNotIn("selections", context)
+        self.assertNotIn("needed", context)
+        for question in body["questions"].values():
+            self.assertIn("distinct", question["criteria"]["needed"])
+            self.assertIn("already established", question["criteria"]["not_needed"])
+
+    async def test_routing_context_keeps_applicable_missing_evidence(self):
+        records = dict(fixture_records("production-resequence-v2"))
+        build = records["read_build"]
+        records["read_build"] = build.model_copy(update={
+            "cell": build.cell.model_copy(update={"qualification_reference": None}),
+        })
+        runtime = self.make_runtime(scenario_id="production-resequence-v2")
+        with patch("decision_v2.fixtures.fixture_records", return_value=records), \
+                patch("decision_v2.runtime.fixture_records", return_value=records):
+            await DecisionClient(runtime).select(RunState(scenario_id="production-resequence-v2"))
+        context = self.service.requests[0][1]["state"]["routing_context"]
+        self.assertTrue(context["applicability"]["qualified_cell"])
+        self.assertFalse(context["checks"]["qualified_cell"])
+        self.assertEqual(context["known_unknowns_by_role"]["production"], ["qualified_cell"])
+
+    def test_selection_display_separates_raw_not_needed_from_effective_uncertainty(self):
+        lines = []
+        answer = ChoiceAnswer(
+            selected="not_needed", probabilities={"needed": .169, "not_needed": .662, "cannot_determine": .169},
+            confidence=.49,
+        )
+        Presenter(lines.append).choice("Production", answer, selection=True)
+        output = " ".join(lines)
+        self.assertIn("model choice not needed | chosen-option probability 66.2%", output)
+        self.assertIn("model-reported confidence 49%", output)
+        self.assertIn("Routing outcome: uncertain", output)
+        self.assertIn("70%", output)
+        self.assertNotIn("not selected", output)
+
+    def test_chosen_option_probability_is_not_maximum_probability(self):
+        lines = []
+        answer = ChoiceAnswer(
+            selected="not_needed", probabilities={"needed": .6, "not_needed": .3, "cannot_determine": .1},
+            confidence=.21,
+        )
+        Presenter(lines.append).choice("Commercial", answer, selection=True)
+        output = " ".join(lines)
+        self.assertIn("chosen-option probability 30.0%", output)
+        self.assertNotIn("chosen-option probability 60.0%", output)
+        self.assertEqual(answer.effective, "cannot_determine")
+
+    def test_routing_pause_is_not_rendered_as_a_missing_business_fact(self):
+        trace = []
+        state = RunState(scenario_id="carrier-delay-v2", active=["supply-chain"],
+                         uncertain=["production", "commercial"])
+        request = ClarificationRequest(0, (), ("production", "commercial"),
+                                       ("Selection uncertainty: production, commercial",), None,
+                                       scenario_id="carrier-delay-v2")
+        Presenter(trace.append, scenario_id="carrier-delay-v2").review(state, request.reasons, request)
+        output = " ".join(trace)
+        self.assertIn("Routing decision unresolved", output)
+        self.assertIn("No specialist assessment or proposal validation has run", output)
+        self.assertIn("not a finding that stock, capacity or approvals are missing", output)
+
+
 class TerminalTests(unittest.IsolatedAsyncioTestCase):
     make_runtime = FrameworkAgentTests.make_runtime
 

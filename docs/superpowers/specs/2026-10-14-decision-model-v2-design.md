@@ -65,6 +65,18 @@ or actual contact. The existing customer-window clarification is quality-only;
 it cannot resolve generic missing carrier, qualification, capacity or approval
 evidence. Quality's single affected-role continuation and all budgets remain.
 
+The carrier routing investigation preserves the existing70%/unique-highest
+selected-option gate and pause-before-dispatch on any uncertain role. A weak
+not_needed is uncertain, not permission to skip. Model confidence is separate
+from option probability and is not used as a routing threshold. Generic
+selection now receives a derived canonical position/check/applicability summary
+in addition to all four records, distinguishing nonapplicable fields from
+missing evidence without assigning roles. Its criteria distinguish distinct
+role actions/dependencies/unresolved questions from established facts. Terminal
+output separates raw choice/probability from effective routing and identifies
+pre-dispatch uncertainty as routing, not a business-plan failure. No live-score
+improvement is promised; uncertain-to-consult routing requires separate approval.
+
 ## User-directed synthetic case
 
 Freeze a Thursday2026-10-15 14:00 UTC-05:00 snapshot. Fictional Tier-2 stamped

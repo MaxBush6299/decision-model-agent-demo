@@ -148,14 +148,19 @@ class Presenter:
     def choice(self, label, answer, selection=False):
         if selection:
             self.section("TEAM")
-        effective = answer.effective if selection else (
+        display_choice = ("model choice " + answer.selected if selection else
             answer.selected if answer.satisfactory else f"{answer.selected} (below routing policy)"
         )
         confidence = "not reported" if answer.confidence is None else f"{answer.confidence:.0%}"
-        self.line(f"{label}: {effective.replace('_', ' ')} | chosen-option probability "
+        self.line(f"{label}: {display_choice.replace('_', ' ')} | chosen-option probability "
                   f"{answer.probabilities[answer.selected]:.1%} | model-reported confidence {confidence}.")
-        if selection and answer.effective != answer.selected:
-            self.line(f"  Model selected {answer.selected.replace('_', ' ')}; effective selection is uncertain.")
+        if selection:
+            routing = {"needed": "consult specialist", "not_needed": "skip specialist",
+                       "cannot_determine": "uncertain"}[answer.effective]
+            self.line(f"  Routing outcome: {routing}.")
+            if not answer.satisfactory:
+                self.line("  Requires chosen-option probability at least 70% and a uniquely highest "
+                          "selected option; reported confidence is separate.")
         if self.verbose:
             self.output("[diagnostic] complete option probabilities (not confidence): " +
                         json.dumps(answer.probabilities))
@@ -198,7 +203,13 @@ class Presenter:
     def review(self, state, reasons, request):
         if state.proposal is None:
             self.section("INITIAL PLAN")
-            self.line("Assessment paused before expert dispatch; selection evidence is unresolved.")
+            if state.uncertain:
+                self.line("Routing decision unresolved: " + ", ".join(a.title() for a in state.uncertain) + ".")
+                self.line("No specialist assessment or proposal validation has run.")
+                self.line("This is uncertainty about selecting or skipping expertise, "
+                          "not a finding that stock, capacity or approvals are missing.")
+            else:
+                self.line("No specialists selected; there is no assessed business plan.")
         if state.policies:
             self.line("Required owner handoffs: " + "; ".join(self.labels[k] for k in state.policies))
         self.section("HUMAN CLARIFICATION")
@@ -220,6 +231,9 @@ class Presenter:
         if self.scenario_id == SCENARIO_ID:
             self.line("Planning update only; quality release, containment and required approvals remain separate.")
         else:
+            if state.uncertain and state.proposal is None:
+                self.line("Current routing policy pauses the whole team before dispatch. "
+                          "Business input cannot override an uncertain routing decision.")
             self.line("Responsible-owner review is required; this case has no supported terminal evidence update.")
             for reason in reasons:
                 if not reason.startswith(("Unknown domain evidence:", "Mandatory approval handoff:")):

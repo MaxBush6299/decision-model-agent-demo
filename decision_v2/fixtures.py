@@ -458,6 +458,22 @@ def operational_position(records):
     }
 
 
+def routing_context(scenario_id: ScenarioId):
+    records = fixture_records(scenario_id)
+    return {
+        "source": "derived_synthetic_fixture",
+        "position": operational_position(records),
+        "checks": operational_checks(records),
+        "applicability": {
+            "qualified_cell": records["read_build"].production_units > 0,
+            "customer_pull_forward_request": scenario_id == "order-pull-forward-v2",
+        },
+        "known_unknowns_by_role": {
+            actor: sorted(domain_unknowns(actor, scenario_id)) for actor in ALLOWLIST
+        },
+    }
+
+
 def operational_checks(records):
     stock, build, shipment, policy = (records[name] for name in
                                      ("read_inventory", "read_build", "read_shipment", "read_approval_policy"))

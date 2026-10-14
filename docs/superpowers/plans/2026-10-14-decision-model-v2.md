@@ -277,3 +277,26 @@ paths pause, and generic customer-window updates are rejected without calls.
 Selective Production-only synthesis can cite canonical policy supplied in its
 ledger without an extra tool/model call. Offline terminal preview, help,
 dependency consistency and diff checks pass. Live behavior remains untested.
+
+## Carrier routing diagnosis and scoped clarification
+
+- [x] Trace the actual selection payload and strict routing gate. All carrier
+  records were already supplied; weak selected not_needed scores become
+  uncertain and block all specialist dispatch. No evidence omission or
+  quality-case handoff was found.
+- [x] Clarify additional-case role criteria and supply derived canonical
+  position/check/applicability data, not role assignments. Keep genuinely
+  missing applicable evidence and all probability/dispatch guards unchanged.
+- [x] Distinguish raw model choice/chosen-option probability from effective
+  routing, and pre-dispatch uncertainty from a business evidence/plan failure.
+- [x] Verify reported rounded chosen scores with explicitly synthetic residual
+  probabilities, one Decision-1/no GPT/tool attempts, actual request grounding,
+  applicable missing qualification and chosen-not-maximum probability display.
+
+Verification:116 offline tests (34 unchanged v1,82 v2), CLI help and diff checks
+pass. The same reported scores still pause under the preserved routing policy;
+grounding fixes are not a promise of different live scores. The full live score
+vectors were not provided and were not invented as observed evidence.
+No live inference, push/merge or auth/budget/dependency/cloud/site change.
+Consulting routing-uncertain specialists instead of pausing remains a separate
+user decision, not an implemented fix.
