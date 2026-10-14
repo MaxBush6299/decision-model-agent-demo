@@ -1,4 +1,5 @@
 import math
+from datetime import datetime
 from dataclasses import dataclass, field
 from typing import Annotated, Literal
 
@@ -7,18 +8,18 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 AGENTS = ("supply-chain", "production", "commercial")
 SELECTION_OPTIONS = ("needed", "not_needed", "cannot_determine")
 VALIDATION_OPTIONS = ("Addresses the issue", "Needs revision", "Cannot determine")
-SCENARIO_ID = "parts-shortage-v2"
-ISSUE_ID = "issue:parts-shortage-v2"
+SCENARIO_ID = "quality-hold-v2"
+ISSUE_ID = "issue:quality-hold-v2"
 THRESHOLD = .70
 AgentId = Literal["supply-chain", "production", "commercial"]
 Action = Literal[
     "seek_freight_approval", "expedite_freight", "resequence_build",
-    "engineering_review", "gather_information",
+    "contain_and_recover", "request_customer_window", "gather_information",
 ]
-Approval = Literal["freight_authority", "engineering", "customer_commitment"]
+Approval = Literal["freight_authority", "quality_containment", "customer_notification", "customer_commitment"]
 UnknownKey = Literal[
-    "shipment_arrival", "material_availability_note", "recovery_capacity_assemblies",
-    "customer_commitment", "proposal_feedback",
+    "shipment_arrival", "incoming_acceptance", "customer_disposition",
+    "customer_delivery_change", "proposal_feedback",
 ]
 Text = Annotated[str, Field(min_length=1, max_length=2000)]
 EvidenceId = Annotated[str, Field(min_length=1, max_length=120)]
@@ -131,9 +132,12 @@ class FindingRef(StrictModel):
 class ExpertFinding(StrictModel):
     agent_id: AgentId
     revision: Literal[0, 1]
-    assessment: Text
+    assessment: Annotated[str, Field(min_length=1, max_length=500)]
+    implication: Annotated[str, Field(min_length=1, max_length=500)]
     recommended_action: Action
-    uses_alternate: bool
+    uses_held_stock: bool
+    uses_expedited_freight: bool
+    containment_required: bool
     changes_customer_commitment: bool
     evidence_ids: list[EvidenceId] = Field(min_length=1, max_length=12)
     unknown_keys: list[UnknownKey] = Field(max_length=12)
@@ -149,9 +153,11 @@ class ExpertFinding(StrictModel):
 class CoordinatedProposal(StrictModel):
     revision: Literal[0, 1]
     recommended_action: Action
-    uses_alternate: bool
+    uses_held_stock: bool
+    uses_expedited_freight: bool
+    containment_required: bool
     changes_customer_commitment: bool
-    brief: Text
+    brief: Annotated[str, Field(min_length=1, max_length=1000)]
     finding_refs: list[FindingRef] = Field(max_length=3)
     evidence_ids: list[EvidenceId] = Field(max_length=12)
     unknown_keys: list[UnknownKey] = Field(max_length=12)
@@ -165,16 +171,32 @@ class CoordinatedProposal(StrictModel):
 
 
 AFFECTED = {
-    "shipment_arrival": ("supply-chain", "production"),
-    "material_availability_note": ("supply-chain", "production"),
-    "recovery_capacity_assemblies": ("production",),
-    "customer_commitment": ("commercial", "production"),
+    "customer_delivery_change": ("production", "commercial"),
 }
+
+
+class CustomerDeliveryChange(StrictModel):
+    customer_agreed: bool
+    quantity: int = Field(ge=0)
+    revised_delivery_at: datetime | None
+    reference: str = Field(min_length=1, max_length=200)
+
+    @model_validator(mode="after")
+    def check_window(self):
+        if not self.customer_agreed:
+            if self.quantity != 0 or self.revised_delivery_at is not None:
+                raise ValueError("No agreement cannot move any delivery.")
+        elif (
+            self.quantity <= 0 or self.revised_delivery_at is None
+            or self.revised_delivery_at.utcoffset() is None
+        ):
+            raise ValueError("Reported agreement requires positive quantity and an offset-aware delivery time.")
+        return self
 
 
 class HumanResponse(StrictModel):
     kind: Literal["clarify", "reject", "escalate"]
-    updates: dict[str, str | int] = Field(default_factory=dict, max_length=4)
+    updates: dict[str, CustomerDeliveryChange] = Field(default_factory=dict, max_length=1)
 
     @model_validator(mode="after")
     def check_updates(self):
@@ -185,20 +207,15 @@ class HumanResponse(StrictModel):
         if not self.updates:
             raise ValueError("Clarification requires evidence.")
         for key, value in self.updates.items():
-            if key not in (*AFFECTED, "proposal_feedback"):
+            if key not in AFFECTED:
                 raise ValueError("Unsupported clarification key.")
-            if key == "recovery_capacity_assemblies":
-                if type(value) is not int or value < 0:
-                    raise ValueError("Recovery capacity must be a nonnegative integer.")
-            elif not isinstance(value, str) or not value.strip() or len(value) > 1000:
-                raise ValueError("Clarification text must contain 1-1000 characters.")
         return self
 
 
 class HumanEvidence(StrictModel):
     evidence_id: EvidenceId
     key: str
-    value: str | int
+    value: CustomerDeliveryChange
     source: Literal["human_clarification"] = "human_clarification"
     request_id: str
     revision: Literal[1] = 1
@@ -262,7 +279,9 @@ def validate_proposal(proposal: CoordinatedProposal, state: RunState) -> None:
         raise DemoError("Coordinator omitted or duplicated a participating finding.")
     validate_references(proposal, set(state.evidence))
     findings = [state.findings[a] for a in state.active]
-    for field_name in ("uses_alternate", "changes_customer_commitment"):
+    if proposal.uses_held_stock or not proposal.containment_required:
+        raise DemoError("Coordinator cannot release held stock or omit shipped-lot containment.")
+    for field_name in ("containment_required", "uses_expedited_freight", "changes_customer_commitment"):
         if any(getattr(f, field_name) for f in findings) and not getattr(proposal, field_name):
             raise DemoError(f"Coordinator omitted a material {field_name} requirement.")
     for field_name in ("unknown_keys", "approval_requests"):

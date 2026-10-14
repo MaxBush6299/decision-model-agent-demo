@@ -11,17 +11,17 @@ from pydantic import BaseModel, ValidationError
 from typing import Literal
 
 from .contracts import (
-    ISSUE_ID, SCENARIO_ID, Conflict, CoordinatedProposal, DemoError, ExpertFinding,
+    ISSUE_ID, SCENARIO_ID, CoordinatedProposal, DemoError, ExpertFinding,
     RunState, validate_proposal, validate_references,
 )
-from .fixtures import ALLOWLIST, DOMAIN_UNKNOWNS, ISSUE, fixture_records
+from .fixtures import ALLOWLIST, ISSUE, authoritative_constraints, domain_unknowns, fixture_records
 from .runtime import AzureRuntime, CURRENT_CALL
 
 INSTRUCTIONS = {
-    "supply-chain": "Assess material shortage, shipment evidence and logistics alternatives; never authorize freight or unapproved parts.",
-    "production": "Assess build sequencing and recovery capacity; do not invent usable material, capacity or safety/release authorization.",
-    "commercial": "Assess freight authority, customer commitments and approval requirements; never grant spending authority or promise a delivery.",
-    "coordinator": "Combine every participating finding, preserving unresolved unknowns, approval requests and exact conflict records. Never decide by majority vote.",
+    "supply-chain": "Distinguish released stock, Quality-held stock, shipped suspect exposure and separate-lot replacement offers. Assess receipt/acceptance and logistics, never release stock or authorize freight.",
+    "production": "Assess the two dated delivery obligations using only independently released units. A reported customer window changes the planning obligation, not inventory or Quality release.",
+    "commercial": "Assess customer delivery flexibility, pending shipped-lot communication/disposition and freight authority. Escalate to responsible Quality/customer contacts, never send notification or grant approval.",
+    "coordinator": "Combine every finding, preserving containment independently of delivery recovery, unresolved unknowns and exact conflicts. No majority vote, stock release or actual customer/spending authority.",
 }
 
 
@@ -44,15 +44,15 @@ class FixtureGuard(FunctionMiddleware):
         ):
             raise MiddlewareFailure("Fixture returned error content; no repair turn permitted.")
         record = fixture_records()[context.function.name]
-        self.state.evidence[record.evidence_id] = record.model_dump()
-        self.runtime.budget.trace(f"Evidence {record.evidence_id}: synthetic_fixture")
+        self.state.evidence[record.evidence_id] = record.model_dump(mode="json")
+        self.runtime.budget.trace(f"Evidence {record.evidence_id}: {record.model_dump_json()}")
 
 
 def fixture_tool(name: str):
     record = fixture_records()[name]
 
     @tool(name=name, description=f"Read fixed SYNTHETIC shortage {name[5:]} evidence; no live data or writes.")
-    async def read_fixture(scenario_id: Literal["parts-shortage-v2"]) -> str:
+    async def read_fixture(scenario_id: Literal["quality-hold-v2"]) -> str:
         if scenario_id != SCENARIO_ID:
             raise DemoError("Unsupported synthetic scenario.")
         return record.model_dump_json()
@@ -72,7 +72,7 @@ def underlying_demo_error(exc: BaseException) -> DemoError | None:
 
 def tracked_unknowns(actor: str, state: RunState) -> set[str]:
     previous = state.findings.get(actor)
-    return set(DOMAIN_UNKNOWNS.get(actor, ())).union(previous.unknown_keys if previous else ())
+    return domain_unknowns(actor).union(previous.unknown_keys if previous else ())
 
 
 class ExpertTeam:
@@ -102,32 +102,35 @@ class ExpertTeam:
             "Return the strict schema with the supplied actor/revision, concise supported assessment, "
             "and real supplied evidence IDs. Do not fabricate references or measurements. "
             "Human assertions are unverified and cannot grant approvals or change fixed facts. "
+            "Read your two allowlisted records, preferably in a single tool round; no other tools. "
             "Specialists must successfully call at least one allowlisted fixture tool. "
-            "Set uses_alternate and changes_customer_commitment truthfully for the recommendation, "
-            "including dependencies on those steps; these flags trigger mandatory review. "
+            "Give a brief evidence assessment and a separate implication, not a payload dump. "
+            "Set uses_held_stock=false and containment_required=true: the existing Quality hold "
+            "and escalation for already shipped suspect units cannot be lifted by this demo. "
+            "Six failures in the measured sample must not be extrapolated to the whole lot. "
+            "Set uses_expedited_freight for any recommendation relying on the dedicated courier, even "
+            "when its main action is containment/schedule recovery; spending authority remains mandatory. "
+            "Set changes_customer_commitment truthfully; unverified customer flexibility still needs review. "
             "Include every required_unknown_key and preserve previous_conflicts exactly. "
             "Coordinator must cite every finding_refs agent/revision and preserve the union of "
             "unknown_keys, approval_requests and conflicts. Never claim real-world resolution."
         )
         agent = Agent(client=provider, name=actor, id=actor, instructions=instructions, tools=tools)
         self.agents[(actor, state.revision)] = agent
-        cleared = {e.key for e in state.overlays if e.key not in ("proposal_feedback", "material_availability_note")}
+        cleared = {e.key for e in state.overlays}
         required = sorted(tracked_unknowns(actor, state) - cleared)
         previous = state.findings.get(actor)
         input_data = {
             "scenario_id": SCENARIO_ID, "actor": actor, "revision": state.revision,
             "original_issue": {"evidence_id": ISSUE_ID, "text": ISSUE},
-            "human_evidence": [e.model_dump() for e in state.overlays],
+            "human_evidence": [e.model_dump(mode="json") for e in state.overlays],
             "required_unknown_keys": required,
-            "previous_conflicts": [c.model_dump() for c in previous.conflicts] if previous else [],
-            "prior_finding": previous.model_dump() if previous else None,
+            "previous_conflicts": [c.model_dump(mode="json") for c in previous.conflicts] if previous else [],
+            "prior_finding": previous.model_dump(mode="json") if previous else None,
         }
         if actor == "coordinator":
-            input_data["findings"] = [state.findings[a].model_dump() for a in state.active]
-            input_data["authoritative_constraints"] = {
-                "shortfall_assemblies": 170, "freight_cost_usd": 4200,
-                "planner_limit_usd": 2500, "alternate_engineering_approved": False,
-            }
+            input_data["findings"] = [state.findings[a].model_dump(mode="json") for a in state.active]
+            input_data["authoritative_constraints"] = authoritative_constraints()
         self.runtime.budget.trace(f"Agent {actor}: assess revision={state.revision}")
         try:
             async with budget.stage("gpt", actor, state.revision):
@@ -151,6 +154,8 @@ class ExpertTeam:
         finding = await self.invoke(actor, state, ExpertFinding)
         if finding.agent_id != actor or finding.revision != state.revision:
             raise DemoError("Specialist returned wrong identity/revision.")
+        if finding.uses_held_stock or not finding.containment_required:
+            raise DemoError("Specialist cannot release held stock or omit shipped-lot containment.")
         executed = self.runtime.budget.tools[(actor, state.revision)]
         if not executed:
             raise DemoError("Specialist produced an unevidenced finding without fixture tools.")
@@ -159,7 +164,7 @@ class ExpertTeam:
         validate_references(finding, allowed)
         if not any(fixture_records()[name].evidence_id in finding.evidence_ids for name in executed):
             raise DemoError("Specialist omitted citation of its actual fixture evidence.")
-        filled = {e.key for e in state.overlays if e.key not in ("proposal_feedback", "material_availability_note")}
+        filled = {e.key for e in state.overlays}
         tracked = tracked_unknowns(actor, state)
         required = tracked - filled
         if not required.issubset(finding.unknown_keys):
@@ -171,13 +176,6 @@ class ExpertTeam:
                 raise DemoError("Specialist resolved an unknown without citing human evidence.")
         previous = state.findings.get(actor)
         required_conflicts = list(previous.conflicts) if previous else []
-        for evidence in state.overlays:
-            if evidence.key == "material_availability_note" and actor in ("supply-chain", "production"):
-                required_conflicts.append(Conflict(
-                    subject_key="material_availability_note",
-                    evidence_ids=[ISSUE_ID, evidence.evidence_id],
-                    description="Unverified material note cannot change fixed counts or alternate approval.",
-                ))
         # The host preserves conflicts even when refreshed wording omits them.
         conflicts = {c.model_dump_json(): c for c in (*finding.conflicts, *required_conflicts)}
         try:

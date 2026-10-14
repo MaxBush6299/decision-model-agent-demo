@@ -313,9 +313,9 @@ class DecisionClient:
 
     async def select(self, state: RunState):
         domains = {
-            "supply-chain": "material availability, supplier/shipment timing, and logistics alternatives",
-            "production": "build quantity, sequencing, scheduling, and recovery capacity",
-            "commercial": "spending authority, customer commitments, and approval constraints",
+            "supply-chain": "released versus held material, shipped exposure and separate-lot replacement logistics",
+            "production": "dated delivery obligations, released-stock shortfall and schedule recovery",
+            "commercial": "customer delivery flexibility, responsible notification/disposition and freight authority",
         }
         names = [a.replace("-", "_") + "_needed" for a in AGENTS]
         questions = {
@@ -335,11 +335,15 @@ class DecisionClient:
     async def validate(self, state: RunState):
         question = {"validation": {
             "type": "choice", "instructions": (
-                "Check factual adequacy, not persuasive wording: original issue, authoritative fixture, "
-                "all active findings, untrusted human assertions, actual coordinated proposal, quantities, "
-                "approval limits, action/brief agreement, preservation of unresolved conflicts/unknowns. "
-                "Check uses_alternate and changes_customer_commitment flags agree with the text and findings. "
-                "Do not treat unverified assertions as engineering/spending/safety authority. "
+                "Check factual adequacy, not persuasive wording: original issue, canonical fixtures, "
+                "all findings, untrusted customer-window assertions and actual proposal. "
+                "Reconcile held+shipped lot quantities and scheduled demand. Exclude held stock. "
+                "Do not extrapolate six sample failures to total lot defects. Keep shipped-suspect "
+                "containment and pending notification separate from delivery recovery even after a window moves. "
+                "Check uses_held_stock=false, containment_required=true, expedited-freight and customer-change "
+                "flags against text, including freight dependencies within a broader recovery action. "
+                "An offer is not received/accepted inventory; human assertions are not release, "
+                "customer or spending authority. Preserve approvals, unknowns and conflicts. "
                 "Proposal validation is not proof of execution or real-world resolution."
             ), "criteria": {
                 "Addresses the issue": "Relevant, actionable, evidence-supported, preserving constraints and disagreements.",
@@ -349,10 +353,10 @@ class DecisionClient:
         }}
         context = {
             "original_issue": ISSUE,
-            "fixture": {k: v.model_dump() for k, v in fixture_records().items()},
-            "findings": [state.findings[a].model_dump() for a in state.active],
-            "human_evidence": [e.model_dump() for e in state.overlays],
-            "proposal": state.proposal.model_dump(),
+            "fixture": {k: v.model_dump(mode="json") for k, v in fixture_records().items()},
+            "findings": [state.findings[a].model_dump(mode="json") for a in state.active],
+            "human_evidence": [e.model_dump(mode="json") for e in state.overlays],
+            "proposal": state.proposal.model_dump(mode="json"),
         }
         payload = await self.ask(context, question, "validation", state.revision)
         return parse_choices(payload, ["validation"], VALIDATION_OPTIONS)["validation"]

@@ -4,13 +4,15 @@ import logging
 import os
 import sys
 import unicodedata
+from datetime import datetime, timedelta, timezone
 
 from agent_framework import AgentFrameworkException
 from pydantic import ValidationError
 
 from .agents import ExpertTeam, underlying_demo_error
-from .contracts import ClarificationRequest, DemoError, FinalResult, HumanResponse, RunState
-from .fixtures import ISSUE, initial_evidence
+from .contracts import ClarificationRequest, CustomerDeliveryChange, DemoError, FinalResult, HumanResponse, RunState
+from .fixtures import initial_evidence, validate_delivery_change
+from .presentation import Presenter
 from .runtime import AzureRuntime, Budget, Config, DecisionClient
 from .workflow import build_workflow
 
@@ -23,14 +25,44 @@ def terminal_trace(message: str):
     print(safe_text(message))
 
 
+def parse_terminal_response(text: str, request: ClarificationRequest) -> HumanResponse:
+    text = text.strip()
+    if text.lower() in ("reject", "escalate"):
+        return HumanResponse(kind=text.lower())
+    if "customer_delivery_change" not in request.allowed_keys:
+        raise DemoError("No customer-delivery clarification was requested; reject or escalate instead.")
+    if text.lower() == "no":
+        change = CustomerDeliveryChange(
+            customer_agreed=False, quantity=0, revised_delivery_at=None,
+            reference="Terminal operator reports no customer-agreed revised window.",
+        )
+    else:
+        fields = [field.strip() for field in text.split("|")]
+        if len(fields) != 3 or not fields[0].isdigit():
+            raise DemoError("Use quantity | YYYY-MM-DD HH:MM | customer-planner reference, or no/reject/escalate.")
+        at = datetime.strptime(fields[1], "%Y-%m-%d %H:%M").replace(
+            tzinfo=timezone(timedelta(hours=-5)),
+        )
+        change = CustomerDeliveryChange(
+            customer_agreed=True, quantity=int(fields[0]), revised_delivery_at=at, reference=fields[2],
+        )
+    validate_delivery_change(change)
+    return HumanResponse(kind="clarify", updates={"customer_delivery_change": change})
+
+
 async def read_terminal(request: ClarificationRequest) -> HumanResponse | None:
     if not sys.stdin.isatty():
         terminal_trace("Review pending: noninteractive stdin; no automatic continuation.")
         return None
-    terminal_trace("One demo response only; clarification is unverified evidence, not approval.")
-    terminal_trace("Allowed clarification keys: " + (", ".join(request.allowed_keys) or "none"))
-    terminal_trace('Enter JSON: {"kind":"clarify","updates":{"recovery_capacity_assemblies":100}}')
-    terminal_trace('Or {"kind":"reject"} / {"kind":"escalate"}; no accept/approve option.')
+    if "customer_delivery_change" in request.allowed_keys:
+        terminal_trace("Has the customer agreed to move tomorrow's second delivery?")
+        terminal_trace("If so, what quantity and revised delivery time? First 180 at Friday 10:00 stays unchanged.")
+        terminal_trace("Enter quantity | YYYY-MM-DD HH:MM | planner/reference (snapshot timezone UTC-05:00).")
+        terminal_trace("Example: 240 | 2026-10-17 08:00 | customer planner phone note")
+        terminal_trace("Or type no, reject, or escalate. A reported agreement is unverified evidence, not approval.")
+    else:
+        terminal_trace("This pause needs responsible-owner evidence, not a customer-window clarification.")
+        terminal_trace("Type reject or escalate; this demo cannot grant approval or release stock.")
     print("> ", end="", flush=True)
     text = None
     if os.name == "nt":
@@ -79,9 +111,9 @@ async def read_terminal(request: ClarificationRequest) -> HumanResponse | None:
         terminal_trace("ERROR: input exceeds the bounded response size; review pending.")
         return None
     try:
-        response = HumanResponse.model_validate_json(text)
-    except ValidationError:
-        terminal_trace("ERROR: invalid response JSON/schema; review pending, no reprompt.")
+        response = parse_terminal_response(text, request)
+    except (ValidationError, ValueError, DemoError):
+        terminal_trace("ERROR: invalid response quantity/window/reference; review pending, no reprompt.")
         return None
     if not set(response.updates).issubset(request.allowed_keys):
         terminal_trace("ERROR: clarification key is not requested; review pending.")
@@ -107,9 +139,11 @@ async def collect_events(stream):
     return requests, outputs
 
 
-async def run_demo(runtime: AzureRuntime, response_reader=read_terminal, trace=terminal_trace) -> FinalResult:
+async def run_demo(runtime: AzureRuntime, response_reader=read_terminal, trace=terminal_trace, *, verbose=False) -> FinalResult:
     budget = runtime.budget
-    workflow = build_workflow(ExpertTeam(runtime), DecisionClient(runtime), budget, trace)
+    presenter = Presenter(trace, verbose)
+    presenter.case()
+    workflow = build_workflow(ExpertTeam(runtime), DecisionClient(runtime), budget, trace, presenter=presenter)
     state = RunState(evidence=initial_evidence())
     try:
         requests, outputs = await budget.bound(
@@ -117,13 +151,13 @@ async def run_demo(runtime: AzureRuntime, response_reader=read_terminal, trace=t
         )
         if requests:
             request = requests[0]
-            trace(f"Framework pause: request_id={request.request_id}; revision={state.revision}")
+            presenter.diagnostic(f"Framework pause: request_id={request.request_id}; revision={state.revision}")
             budget.begin_human()
             try:
                 async with asyncio.timeout(budget.human_remaining()):
                     response = await response_reader(request.data)
             except TimeoutError:
-                trace("Review pending: human-input deadline expired.")
+                presenter.line("Review pending: human-input deadline expired.")
                 response = None
             finally:
                 budget.end_human()
@@ -132,7 +166,7 @@ async def run_demo(runtime: AzureRuntime, response_reader=read_terminal, trace=t
             elif not isinstance(response, HumanResponse):
                 raise DemoError("Terminal adapter returned an invalid response type.")
             else:
-                trace("Framework resume: one typed human response; same workflow/cumulative budgets")
+                presenter.diagnostic("Framework resume: one typed human response; same workflow/cumulative budgets")
                 requests, outputs = await budget.bound(
                     lambda: collect_events(workflow.run(
                         stream=True, responses={request.request_id: response},
@@ -144,33 +178,37 @@ async def run_demo(runtime: AzureRuntime, response_reader=read_terminal, trace=t
         else:
             result = outputs[0]
     except AgentFrameworkException as exc:
+        presenter.attempts(budget)
         original = underlying_demo_error(exc)
         if original:
             raise original from exc
         raise DemoError("Framework execution failed; no partial result accepted.") from exc
-    trace(f"Final advisory status: {result.status}; no actions executed or authority granted.")
-    for reason in result.reasons:
-        trace("Final handoff reason: " + reason)
-    trace(f"Actual attempts: GPT={budget.counts['gpt']}/20 Decision-1={budget.counts['decision']}/3; "
-          f"tools={sum(map(len, budget.tools.values()))}/12")
+    except DemoError:
+        presenter.attempts(budget)
+        raise
+    except asyncio.CancelledError:
+        presenter.attempts(budget)
+        raise
+    presenter.finish(result, budget)
     return result
 
 
-async def live_run(config):
+async def live_run(config, verbose=False):
     terminal_trace("LIVE Azure Foundry inference | SYNTHETIC fixture tools | proposals only")
-    terminal_trace(ISSUE)
-    terminal_trace("Hard maximum: 20 GPT + 3 Decision-1 attempts, one continuation; not expected runtime.")
+    terminal_trace("One clarification; hard maximum 20 GPT +3 Decision-1 attempts, not expected runtime.")
     budget = Budget(terminal_trace)
     runtime = AzureRuntime(config, budget)
     try:
-        return (await run_demo(runtime)).code
+        return (await run_demo(runtime, verbose=verbose)).code
     finally:
         await runtime.aclose()
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="V2: bounded Foundry expert-team shortage assessment.")
-    parser.add_argument("--example", choices=["supply-chain"], required=True)
+    parser = argparse.ArgumentParser(description="V2: quality-hold containment and customer-delivery recovery.")
+    parser.add_argument("--example", choices=["quality-hold", "supply-chain"], required=True,
+                        help="Quality-hold preset; supply-chain is its backward-compatible alias")
+    parser.add_argument("--verbose", action="store_true", help="Include complete model scores, tool/call diagnostics and provenance")
     parser.add_argument("--endpoint", help="Existing Azure resource root; overrides FOUNDRY_ENDPOINT")
     parser.add_argument("--decision-deployment", help="Existing Decision-1 deployment; overrides DECISION_DEPLOYMENT")
     parser.add_argument("--llm-deployment", help="Existing GPT deployment; overrides LLM_DEPLOYMENT")
@@ -179,7 +217,7 @@ def main(argv=None) -> int:
     logging.getLogger("agent_framework").setLevel(logging.CRITICAL)
     try:
         config = Config.from_args(args)
-        return asyncio.run(live_run(config))
+        return asyncio.run(live_run(config, verbose=args.verbose))
     except DemoError as exc:
         print(f"ERROR: {safe_text(str(exc))}", file=sys.stderr)
         return 1

@@ -1,5 +1,11 @@
 # Decision model v2 Implementation Plan
 
+**Revision note:** The original plan below records the shortage implementation
+committed as `ee7d404`. The user then approved the researched quality-hold case
+on 2026-10-14 ("Lets try this now"); the current specification supersedes the
+old scenario/human contracts while keeping framework/auth/budgets unchanged.
+The quality-hold execution record is at the end of this plan.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the approved terminal expert-team shortage workflow with real
@@ -200,3 +206,26 @@ by the remaining active clock. Both fixes have real-framework offline coverage.
 Implementation boundaries are grouped in one reviewed commit rather than
 separate interim boundary commits. Branch/worktree remain local and preserved;
 live Azure inference is untested and still requires separately bounded approval.
+
+## User-directed quality-hold revision
+
+- [x] Replace shortage records with the dated incident/lot/ASN, released versus
+  held stock, replacement quote, customer schedule and approval/contact policy.
+  Derive arithmetic/unknowns from canonical fixtures; do not extrapolate sample
+  failures or permit held-stock use.
+- [x] Add typed quantity/window/reference customer clarification; refresh
+  Production and Commercial, reuse Supply-chain, preserve Quality containment,
+  pending contact/disposition and conditional freight authority.
+- [x] Render six readable business sections, natural non-JSON input, compact
+  probability/confidence, complete verbose diagnostics and always-visible
+  quota/errors/attempt totals. Update docs/spec; keep the old startup alias.
+- [x] Run actual-framework fake-transport regressions and full v1/v2 suite,
+  inspect the offline terminal flow, complete focused read-only review and
+  commit locally. No live inference or push/merge/Azure/site changes.
+
+Verification: 88 offline tests (34 unchanged v1, 54 v2), CLI help and dependency
+consistency pass. Focused review found no significant issues. A typed freight
+dependency flag also protects combined containment/recovery recommendations
+from losing spending review merely because their main action is not "freight".
+Live behavior remains untested; start with `--example quality-hold` (or the
+preserved `--example supply-chain` alias), optionally `--verbose`.
