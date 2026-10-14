@@ -1,0 +1,6 @@
+-r requirements.txt
+agent-framework-core==1.21.0
+agent-framework-openai==1.15.0
+openai==3.26.0
+httpx2==2.13.1
+pydantic>=2,<3

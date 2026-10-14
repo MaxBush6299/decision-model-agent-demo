@@ -47,8 +47,11 @@ Annotated functions registered through `tools`/`@tool` are real framework tools.
 Read-only PyPI metadata checks identify `agent-framework-core==1.21.0` and
 `agent-framework-openai==1.16.0` as current releases; the latter requires
 core>=1.20.0,<2 and openai>=2.25.0,<4. Both support Python>=3.10; retain the
-repository's Python 3.11+ baseline. Target these exact framework pins in the
-separate v2 dependency file. Tagged official source (`python-1.21.0`) confirms
+repository's Python 3.11+ baseline. The configured Microsoft package feed does
+not expose provider 1.16.0. The user approved provider 1.15.0 with core 1.21.0
+on 2026-10-14, conditional on actual API/offline compatibility checks; target
+these exact pins in the separate v2 dependency file, without a feed override.
+Tagged official source (`python-1.21.0`) confirms
 the provider version and Agent/workflow/client signatures. No packages were
 installed or imported, and runtime compatibility remains an offline
 implementation acceptance check, not a claimed tested integration.
@@ -96,6 +99,10 @@ known unknown keys, approval requests, conflicts.
 Conflict: subject key, evidence IDs, description.
 `CoordinatedProposal`: revision, action, brief, every participating agent/revision
 finding reference, and evidence/unknown/approval/conflict fields.
+Both outputs require strict boolean `uses_alternate` and
+`changes_customer_commitment` flags so policy checks these dependencies without
+parsing prose. Coordinator cannot clear a flag set by any participating expert;
+Decision-1 also checks flag/text agreement.
 
 Actions: seek_freight_approval, expedite_freight, resequence_build,
 engineering_review, gather_information. Approval kinds: freight_authority,
@@ -268,3 +275,9 @@ v1 isolation. Package metadata and tagged auth/invocation signatures verified;
 installed runtime compatibility still needs offline acceptance during
 implementation. No unresolved product-design decision remains.
 User written-spec approval precedes writing-plans.
+
+Written spec a6036a3 was approved on 2026-10-14. The subsequent user clarification
+requires existing Azure Foundry endpoints/deployments for both model families.
+The provider package and AsyncOpenAI are protocol adapters, not authorization
+to call public OpenAI. Outbound URL/audience and ambient-key regression tests
+must enforce that boundary.
