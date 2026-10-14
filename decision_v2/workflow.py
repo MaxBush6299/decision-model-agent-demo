@@ -132,7 +132,7 @@ class ReviewExecutor(Executor):
             proposal=state.proposal, request_id="clarify-" + uuid4().hex,
         )
         self.pending_state, self.pending_request = state, request
-        self.presenter.review(state, reasons)
+        self.presenter.review(state, reasons, request)
         await ctx.request_info(request_data=request, response_type=HumanResponse, request_id=request.request_id)
 
     @response_handler
@@ -150,7 +150,10 @@ class ReviewExecutor(Executor):
         if response.kind != "clarify":
             await ctx.yield_output(FinalResult(
                 "rejected" if response.kind == "reject" else "escalated", 0,
-                ("Human stopped this advisory demo; no actions or authority granted.",), state.proposal,
+                ("Leadership escalation requested; no notification or external contact performed."
+                 if response.kind == "escalate" else
+                 "Human stopped this advisory demo; no actions or authority granted.",
+                 *original_request.reasons), state.proposal,
             ))
             return
         if not set(response.updates).issubset(original_request.allowed_keys):

@@ -229,3 +229,21 @@ dependency flag also protects combined containment/recovery recommendations
 from losing spending review merely because their main action is not "freight".
 Live behavior remains untested; start with `--example quality-hold` (or the
 preserved `--example supply-chain` alias), optionally `--verbose`.
+
+## User-directed recommendation-led review revision
+
+- [x] Start human review with customer-contact rationale from canonical delivery
+  quantities. Preserve actual model findings/proposal; distinguish the templated
+  host suggestion unless the Coordinator explicitly requests a customer-window review.
+- [x] Offer two choices: record an unverified customer response after contact,
+  collecting quantity/time/reference, or reject and request leadership escalation.
+  Keep one shared human deadline, one typed response and one framework resume.
+  Escalation performs no contact, refresh or further inference and retains
+  unresolved evidence and mandatory owner handoffs in the final output.
+- [x] Cover real-framework offline recommendation/response/escalation paths,
+  input termination, bounded references and whole-collection timeout. Update
+  the spec and startup guide without altering agents, tools, limits or v1/site.
+
+Verification: 94 offline tests (34 unchanged v1, 60 v2), CLI help, dependency
+consistency and diff checks pass. No live inference, external contact, push or
+merge performed. The branch and native worktree remain local.

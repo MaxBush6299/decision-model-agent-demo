@@ -134,14 +134,29 @@ class Presenter:
             self.line("Preserved disagreement: " + conflict.description)
         self.record("complete proposal/provenance", state.proposal)
 
-    def review(self, state, reasons):
+    def review(self, state, reasons, request):
         if state.proposal is None:
             self.section("INITIAL PLAN")
             self.line("Assessment paused before expert dispatch; selection evidence is unresolved.")
-        self.section("HUMAN CLARIFICATION")
-        self.line("A reported customer window can change planning demand, not stock release or approval.")
         if state.policies:
-            self.line("Separate required handoffs: " + "; ".join(LABELS[k] for k in state.policies))
+            self.line("Required owner handoffs: " + "; ".join(LABELS[k] for k in state.policies))
+        self.section("HUMAN CLARIFICATION")
+        if "customer_delivery_change" in request.allowed_keys:
+            first, second = fixture_records()["read_build"].deliveries
+            supported = state.proposal is not None and state.proposal.recommended_action == "request_customer_window"
+            label = ("Recommended follow-up to the coordinator proposal" if supported else
+                     "Host-suggested review step (not a model recommendation)")
+            self.line(f"{label}: Contact the customer planner about rescheduling the second "
+                      f"{second.quantity} units due {display_time(second.due_at)}. "
+                      f"Keep the first {first.quantity} at {display_time(first.due_at)} unchanged.")
+            position = delivery_position()
+            self.line(f"Rationale: released stock covers the first {position.first_covered} units; "
+                      f"the original second-window shortfall is {position.baseline_gap}.")
+            if state.proposal is not None:
+                self.line("Review the actual findings and coordinator proposal above before contacting the customer.")
+            else:
+                self.line("Expert selection remains unresolved; customer timing alone cannot resolve it.")
+        self.line("Planning update only; quality release, containment and required approvals remain separate.")
         for reason in reasons:
             self.diagnostic("Human review: " + reason)
 
@@ -164,7 +179,9 @@ class Presenter:
         self.line(f"Final advisory status: {result.status.replace('_', ' ')}. "
                   "No stock released, notification sent, customer commitment made or spending authorized.")
         for reason in result.reasons:
-            if reason.startswith("Mandatory approval handoff: "):
+            if reason.startswith("Leadership escalation requested"):
+                self.line(reason)
+            elif reason.startswith("Mandatory approval handoff: "):
                 keys = reason.removeprefix("Mandatory approval handoff: ").split(", ")
                 self.line("Required owner actions: " + "; ".join(LABELS[k] for k in keys))
             elif reason.startswith("Unknown domain evidence: "):

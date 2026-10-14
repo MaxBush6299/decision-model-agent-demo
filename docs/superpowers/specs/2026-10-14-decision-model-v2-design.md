@@ -112,15 +112,27 @@ All not-needed ->handoff. Otherwise experts ->complete join ->Coordinator
 overlays and actual proposal. Host checks policy independently. Do not script
 particular live selections, recommendations or validation verdicts.
 
-Natural question: "Has the customer agreed to move tomorrow's second delivery?
-If so, what quantity and revised delivery time?" One line:
-`240 | 2026-10-17 08:00 | customer planner phone note`.
+User-directed UX revision: recommend contacting the customer planner to discuss
+rescheduling the second240, retaining first180 Friday10:00. Preserve actual
+model findings/proposal; unless the Coordinator action requests a customer-window
+review, label this explicitly as a host-suggested review step, not a model
+recommendation. Explain the canonical240 shortage without inventing customer
+agreement or a model verdict. Keep mandatory handoffs in plan/final and use one
+concise reminder about planning-only updates and separate quality/approval ownership.
+
+Two terminal choices: record a customer response received after contact (not
+intent to contact), or reject the recommendation and request leadership
+escalation. First choice collects quantity, revised time and bounded response
+reference in separate readable fields. All fields share one human deadline and
+produce one typed response. Second choice yields `HumanResponse(kind="escalate")`
+and final escalation without refresh/model calls or an actual notification.
+Reject/escalate is also available during field collection.
 Strict `CustomerDeliveryChange`: customer_agreed boolean; quantity integer;
 offset-aware revised timestamp or null; nonempty reference<=200 characters.
 An agreed move is positive, <=second-delivery quantity and later than its
-original time. First delivery cannot be modified. `no` records no agreement
-with zero moved quantity; reject/escalate stops without further inference.
-No raw JSON input, approve/release action or additional question loop.
+original time. First delivery cannot be modified. Internal typed no-agreement
+records remain supported; the terminal offers only the two choices above.
+No raw JSON input, approve/release action, reprompt or additional question loop.
 
 `HumanResponse` clarify carries only this typed customer_delivery_change.
 Record `HumanEvidence {evidence_id,key,value,source=human_clarification,

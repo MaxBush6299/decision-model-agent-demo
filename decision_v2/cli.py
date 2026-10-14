@@ -11,7 +11,7 @@ from pydantic import ValidationError
 
 from .agents import ExpertTeam, underlying_demo_error
 from .contracts import ClarificationRequest, CustomerDeliveryChange, DemoError, FinalResult, HumanResponse, RunState
-from .fixtures import initial_evidence, validate_delivery_change
+from .fixtures import fixture_records, initial_evidence, validate_delivery_change
 from .presentation import Presenter
 from .runtime import AzureRuntime, Budget, Config, DecisionClient
 from .workflow import build_workflow
@@ -37,7 +37,7 @@ def parse_terminal_response(text: str, request: ClarificationRequest) -> HumanRe
             reference="Terminal operator reports no customer-agreed revised window.",
         )
     else:
-        fields = [field.strip() for field in text.split("|")]
+        fields = [field.strip() for field in text.split("|", 2)]
         if len(fields) != 3 or not fields[0].isdigit():
             raise DemoError("Use quantity | YYYY-MM-DD HH:MM | customer-planner reference, or no/reject/escalate.")
         at = datetime.strptime(fields[1], "%Y-%m-%d %H:%M").replace(
@@ -50,20 +50,8 @@ def parse_terminal_response(text: str, request: ClarificationRequest) -> HumanRe
     return HumanResponse(kind="clarify", updates={"customer_delivery_change": change})
 
 
-async def read_terminal(request: ClarificationRequest) -> HumanResponse | None:
-    if not sys.stdin.isatty():
-        terminal_trace("Review pending: noninteractive stdin; no automatic continuation.")
-        return None
-    if "customer_delivery_change" in request.allowed_keys:
-        terminal_trace("Has the customer agreed to move tomorrow's second delivery?")
-        terminal_trace("If so, what quantity and revised delivery time? First 180 at Friday 10:00 stays unchanged.")
-        terminal_trace("Enter quantity | YYYY-MM-DD HH:MM | planner/reference (snapshot timezone UTC-05:00).")
-        terminal_trace("Example: 240 | 2026-10-17 08:00 | customer planner phone note")
-        terminal_trace("Or type no, reject, or escalate. A reported agreement is unverified evidence, not approval.")
-    else:
-        terminal_trace("This pause needs responsible-owner evidence, not a customer-window clarification.")
-        terminal_trace("Type reject or escalate; this demo cannot grant approval or release stock.")
-    print("> ", end="", flush=True)
+async def read_terminal_line(prompt: str) -> str | None:
+    print(prompt, end="", flush=True)
     text = None
     if os.name == "nt":
         import msvcrt
@@ -110,8 +98,44 @@ async def read_terminal(request: ClarificationRequest) -> HumanResponse | None:
     if len(text) > 8192:
         terminal_trace("ERROR: input exceeds the bounded response size; review pending.")
         return None
+    return text.strip()
+
+
+async def read_terminal(request: ClarificationRequest) -> HumanResponse | None:
+    if not sys.stdin.isatty():
+        terminal_trace("Review pending: noninteractive stdin; no automatic continuation.")
+        return None
+    can_record = "customer_delivery_change" in request.allowed_keys
+    if can_record:
+        terminal_trace("1. Record customer response after contact: customer will move the second delivery.")
+    else:
+        terminal_trace("This pause needs responsible-owner evidence; a customer-window update is not requested.")
+    terminal_trace("2. Reject the recommendation and request leadership escalation.")
+    choice = await read_terminal_line("Choose 1 or 2: " if can_record else "Choose 2: ")
+    if choice is None:
+        return None
+    if choice.lower() in ("2", "reject", "escalate"):
+        return HumanResponse(kind="escalate")
+    if choice != "1" or not can_record:
+        terminal_trace("ERROR: invalid review choice; review pending, no reprompt.")
+        return None
+    terminal_trace("Record a response received after contact, not an intention to reach out.")
+    terminal_trace("The response remains an unverified user report. Type escalate at any field to stop.")
+    second = fixture_records()["read_build"].deliveries[1]
+    fields = []
+    for prompt in (
+        f"Quantity customer reportedly agreed to move (1-{second.quantity}): ",
+        "Revised delivery time (YYYY-MM-DD HH:MM, UTC-05:00): ",
+        "Customer-planner response reference (1-200 characters): ",
+    ):
+        value = await read_terminal_line(prompt)
+        if value is None:
+            return None
+        if value.lower() in ("reject", "escalate"):
+            return HumanResponse(kind="escalate")
+        fields.append(value)
     try:
-        response = parse_terminal_response(text, request)
+        response = parse_terminal_response(" | ".join(fields), request)
     except (ValidationError, ValueError, DemoError):
         terminal_trace("ERROR: invalid response quantity/window/reference; review pending, no reprompt.")
         return None

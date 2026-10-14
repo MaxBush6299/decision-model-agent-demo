@@ -27,6 +27,7 @@ from decision_v2.fixtures import ALLOWLIST, domain_unknowns, initial_evidence
 from decision_v2.workflow import build_workflow
 from decision_v2.contracts import FinalResult
 from decision_v2.cli import run_demo, read_terminal, parse_terminal_response, safe_text, main
+from decision_v2.presentation import Presenter
 import httpx2 as httpx
 
 
@@ -894,18 +895,22 @@ class TerminalTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(runtime.budget.counts, {"gpt": 7, "decision": 2})
         self.assertTrue(any("Actual model attempts:" in line for line in trace))
 
-    async def test_windows_single_line_valid_invalid_eof_and_interrupt(self):
+    async def test_windows_choices_and_fields_valid_invalid_eof_and_interrupt(self):
         import msvcrt
         from decision_v2.contracts import ClarificationRequest
         request = ClarificationRequest(0, ("customer_delivery_change",), (), (), None)
         cases = (
-            ("240 | 2026-10-17 08:00 | planner note\r", "clarify"),
-            ("no\r", "clarify"),
+            ("1\r240\r2026-10-17 08:00\rplanner note\r", "clarify"),
+            ("1\r2\r2026-10-17 08:00\rplanner note\r", "clarify"),
             ("approve\r", None),
-            ("241 | 2026-10-17 08:00 | planner note\r", None),
+            ("1\r241\r2026-10-17 08:00\rplanner note\r", None),
+            ("1\r240\r2026-10-16 16:00\rplanner note\r", None),
+            ("1\r240\r2026-10-17 08:00\r\r", None),
             ('{"kind":"clarify","updates":{"planner_limit_usd":5000}}\r', None),
-            ("broken json\r", None), ("\x1a", None), ("\x03", None),
-            ("reject\r", "reject"), ("escalate\r", "escalate"),
+            ("I will contact the customer\r", None), ("no\r", None),
+            ("\x1a", None), ("\x03", None), ("1\r\x1a", None), ("1\r240\r\x03", None),
+            ("2\r", "escalate"), ("reject\r", "escalate"), ("escalate\r", "escalate"),
+            ("1\rescalate\r", "escalate"), ("1\r240\rreject\r", "escalate"),
         )
         for chars, expected in cases:
             with self.subTest(expected=expected), patch("sys.stdin.isatty", return_value=True), \
@@ -914,6 +919,146 @@ class TerminalTests(unittest.IsolatedAsyncioTestCase):
                     contextlib.redirect_stdout(io.StringIO()):
                 response = await read_terminal(request)
             self.assertEqual(response.kind if response else None, expected)
+
+    async def test_recommendation_precedes_choices_and_records_unverified_response_once(self):
+        runtime = self.make_runtime()
+        output = io.StringIO()
+        values = iter(("1", "240", "2026-10-17 08:00", "customer planner call | note"))
+        async def line(prompt):
+            print(prompt)
+            return next(values)
+        with patch("sys.stdin.isatty", return_value=True), \
+                patch("decision_v2.cli.read_terminal_line", side_effect=line) as reader, \
+                contextlib.redirect_stdout(output):
+            result = await run_demo(runtime, verbose=True)
+        text = " ".join(output.getvalue().split())
+        self.assertLess(text.index("Contact the customer planner"), text.index("Choose 1 or 2"))
+        self.assertLess(text.index("Required owner handoffs:"), text.index("HUMAN CLARIFICATION"))
+        self.assertIn("Host-suggested review step (not a model recommendation)", text)
+        self.assertIn("not an intention to reach out", text)
+        self.assertIn("customer planner call | note", text)
+        self.assertIn("unverified customer-planner assertion", text)
+        reports = [
+            evidence for request, body in self.service.requests
+            if request.url.path.endswith("/chat/completions")
+            for evidence in json.loads(next(
+                message["content"] for message in body["messages"] if message["role"] == "user"
+            )).get("human_evidence", [])
+        ]
+        self.assertTrue(reports)
+        self.assertTrue(all(evidence["source"] == "human_clarification" for evidence in reports))
+        self.assertIn("formal customer delivery-window review", text)
+        self.assertIn("240 -> 0", text)
+        self.assertIn("Supply-Chain: reused previous finding", text)
+        self.assertEqual(reader.call_count, 4)
+        self.assertEqual(text.count("Framework resume:"), 1)
+        self.assertEqual(runtime.budget.counts, {"gpt": 12, "decision": 3})
+        self.assertEqual(result.code, 2)
+        self.assertNotIn("Has the customer agreed", text)
+        self.assertNotIn("Customer contacted.", text)
+        self.assertNotIn("Delivery date changed.", text)
+        self.assertNotIn("Enter JSON", text)
+
+    async def test_reject_choice_requests_leadership_without_refresh_or_model_calls(self):
+        runtime = self.make_runtime()
+        trace = []
+        with patch("sys.stdin.isatty", return_value=True), \
+                patch("decision_v2.cli.read_terminal_line", return_value="2") as reader, \
+                contextlib.redirect_stdout(io.StringIO()):
+            result = await run_demo(runtime, trace=trace.append, verbose=True)
+        output = " ".join(trace)
+        self.assertEqual((result.status, result.code), ("escalated", 0))
+        self.assertIn("Leadership escalation requested", output)
+        self.assertIn("no notification or external contact performed", output)
+        self.assertIn("Required owner actions:", output)
+        self.assertIn("responsible Quality/customer contact notification", output)
+        self.assertIn("customer disposition of shipped suspect stock unknown", output)
+        self.assertEqual(reader.call_count, 1)
+        self.assertEqual(runtime.budget.counts, {"gpt": 7, "decision": 2})
+        self.assertEqual(sum(map(len, runtime.budget.tools.values())), 6)
+        self.assertEqual(output.count("Framework resume:"), 1)
+        self.assertNotIn("Original second-window uncovered demand:", output)
+        self.assertNotIn("human_clarification evidence", output)
+
+    async def test_field_eof_or_invalid_response_stays_pending_without_refresh(self):
+        for values in (
+            ["1", None], ["1", "240", None], ["1", "240", "2026-10-17 08:00", None],
+            ["1", "240", "bad time", "note"],
+            ["1", "240", "2026-10-17 08:00", "x" * 201],
+        ):
+            with self.subTest(values=values):
+                runtime = self.make_runtime()
+                trace = []
+                with patch("sys.stdin.isatty", return_value=True), \
+                        patch("decision_v2.cli.read_terminal_line", side_effect=values), \
+                        contextlib.redirect_stdout(io.StringIO()):
+                    result = await run_demo(runtime, trace=trace.append, verbose=True)
+                self.assertEqual((result.status, result.code), ("pending", 2))
+                self.assertEqual(runtime.budget.counts, {"gpt": 7, "decision": 2})
+                self.assertFalse(any("Framework resume:" in line for line in trace))
+
+    async def test_entire_multifield_collection_shares_one_human_timeout(self):
+        runtime = self.make_runtime()
+        prompts = []
+        timeouts = []
+        real_timeout = asyncio.timeout
+        def timeout(seconds):
+            timeouts.append(seconds)
+            return real_timeout(.01 if seconds == 300 else seconds)
+        async def line(prompt):
+            prompts.append(prompt)
+            if len(prompts) == 1:
+                return "1"
+            if len(prompts) == 2:
+                return "240"
+            await asyncio.sleep(1)
+        with patch("sys.stdin.isatty", return_value=True), \
+                patch("decision_v2.cli.read_terminal_line", side_effect=line), \
+                patch("decision_v2.cli.asyncio.timeout", side_effect=timeout), \
+                contextlib.redirect_stdout(io.StringIO()):
+            result = await run_demo(runtime)
+        self.assertEqual(timeouts.count(300), 1)
+        self.assertEqual(len(prompts), 3)
+        self.assertEqual((result.status, result.code), ("pending", 2))
+        self.assertEqual(runtime.budget.counts, {"gpt": 7, "decision": 2})
+        self.assertIsNone(runtime.budget.human_started)
+
+    async def test_customer_choice_blocked_when_evidence_not_requested(self):
+        request = ClarificationRequest(0, (), (), (), None)
+        for choice in ("1", "2"):
+            with patch("sys.stdin.isatty", return_value=True), \
+                    patch("decision_v2.cli.read_terminal_line", return_value=choice) as reader, \
+                    contextlib.redirect_stdout(io.StringIO()):
+                response = await read_terminal(request)
+            self.assertEqual(response.kind if response else None, "escalate" if choice == "2" else None)
+            self.assertEqual(reader.call_count, 1)
+
+    def test_host_review_suggestion_is_distinct_from_supported_model_proposal(self):
+        for action in (None, "gather_information", "request_customer_window"):
+            proposal = None if action is None else CoordinatedProposal(
+                revision=0, recommended_action=action, brief="Actual model-authored proposal remains unchanged.",
+                uses_held_stock=False, uses_expedited_freight=False, containment_required=True,
+                changes_customer_commitment=False, finding_refs=[], evidence_ids=[],
+                unknown_keys=["customer_delivery_change"], approval_requests=[], conflicts=[],
+            )
+            state = RunState(proposal=proposal, policies=["quality_containment"])
+            request = ClarificationRequest(0, ("customer_delivery_change",), (), (), proposal)
+            trace = []
+            presenter = Presenter(trace.append)
+            if proposal is not None:
+                presenter.proposal(state)
+            presenter.review(state, [], request)
+            output = " ".join(trace)
+            label = ("Recommended follow-up to the coordinator proposal" if action == "request_customer_window"
+                     else "Host-suggested review step (not a model recommendation)")
+            self.assertIn(label, output)
+            self.assertIn("first 180 at Fri 16 Oct 2026 10:00", output)
+            self.assertIn("second-window shortfall is 240", output)
+            self.assertIn("Planning update only; quality release, containment and required approvals remain separate.", output)
+            if proposal is not None:
+                self.assertEqual(proposal.brief, "Actual model-authored proposal remains unchanged.")
+                self.assertEqual(proposal.recommended_action, action)
+                self.assertIn(proposal.brief, output)
 
     async def test_readable_sections_and_verbose_diagnostics_do_not_add_calls(self):
         for verbose in (False, True):
