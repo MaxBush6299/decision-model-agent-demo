@@ -1400,6 +1400,60 @@ class ScenarioTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(credential.closed)
 
 
+class RoleInstructionTests(unittest.IsolatedAsyncioTestCase):
+    make_runtime = FrameworkAgentTests.make_runtime
+    first_run = ScenarioTests.first_run
+
+    async def test_specialists_receive_domain_process_without_coordinator_join_duties(self):
+        runtime, state, workflow, events = await self.first_run("order-pull-forward-v2")
+        prompts = {}
+        for request, body in self.service.requests:
+            if not request.url.path.endswith("/chat/completions"):
+                continue
+            data = json.loads(next(m["content"] for m in body["messages"] if m["role"] == "user"))
+            prompts[data["actor"]] = " ".join(str(m["content"]) for m in body["messages"]
+                                             if m["role"] in ("system", "developer"))
+        traits = {
+            "supply-chain": ("book", "aggregate", "inventory alone", "alternative carrier", "expedited"),
+            "production": ("ceil", "packing", "reserved", "overtime", "optimal",
+                           "available_until", "staffed_shift_end", "earlier"),
+            "commercial": ("binding", "monetary", "preference", "cost alone"),
+        }
+        for actor, phrases in traits.items():
+            with self.subTest(actor=actor):
+                prompt = prompts[actor]
+                for phrase in phrases:
+                    self.assertIn(phrase, prompt)
+                for phrase in ("selected_option_id", "required_unknown_keys", "previous_conflicts",
+                               "untrusted", "unverified", "under 300 characters", "1200"):
+                    self.assertIn(phrase, prompt)
+                self.assertNotIn("finding_refs", prompt)
+                self.assertNotIn("containment_required=true", prompt)
+                self.assertIn("allowlisted", prompt)
+        coordinator = prompts["coordinator"]
+        for phrase in ("finding_refs", "unscoped", "unsupported", "weights", "same option"):
+            self.assertIn(phrase, coordinator)
+        self.assertIn("no tools", coordinator.lower())
+        self.assertEqual(runtime.budget.counts, {"gpt": 7, "decision": 3})
+        self.assertEqual(set(state.findings), set(AGENTS))
+
+    async def test_quality_addendum_keeps_hold_sample_and_provisional_update_rules_separate(self):
+        runtime, state, workflow, events = await self.first_run(SCENARIO_ID)
+        for request, body in self.service.requests:
+            if not request.url.path.endswith("/chat/completions"):
+                continue
+            data = json.loads(next(m["content"] for m in body["messages"] if m["role"] == "user"))
+            prompt = " ".join(str(m["content"]) for m in body["messages"]
+                              if m["role"] in ("system", "developer"))
+            for phrase in ("uses_held_stock=false", "containment_required=true", "sample",
+                           "planning_update", "provisional", "notification"):
+                self.assertIn(phrase, prompt)
+            if data["actor"] != "coordinator":
+                self.assertNotIn("finding_refs", prompt)
+        self.assertTrue(any(event.type == "request_info" for event in events))
+        self.assertIn("quality_containment", state.policies)
+
+
 class RoutingTests(unittest.IsolatedAsyncioTestCase):
     make_runtime = FrameworkAgentTests.make_runtime
     first_run = ScenarioTests.first_run

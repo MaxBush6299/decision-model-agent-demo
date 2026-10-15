@@ -27,6 +27,33 @@ These are expectations, not model input assignments or guaranteed live counts.
 Two initial live checks (Production/Pull-forward) plus at most two corrective
 reruns are authorized; route variance alone does not justify rerunning or tuning.
 
+## Approved role-instruction refinement
+
+On15 October the user requested additional role instructions. Each actor now
+receives a domain decision process rather than a short label plus mixed shared
+duties. Supply-chain checks option-specific material/shipment feasibility and
+aggregate freight; Production checks setup/run/packing in the available staffed
+cell window with protected reservations; Commercial distinguishes request,
+preference, commitment and actual authority. Each stays within its supplied/
+executed evidence and reports scope limits instead of fabricating other-domain
+knowledge. Coordinator alone receives finding-reference, conflict and
+same-option/unscoped requirement-preservation duties.
+
+Common instructions retain typed concise outputs, provenance, untrusted human
+assertions and no execution/approval claims. A targeted Quality addendum preserves
+the hold, sample/exposure distinction, pending notification and provisional
+customer-window semantics. No preferred answer, objective weights, new schema,
+tool, agent, threshold, model setting or budget is introduced.
+
+One authorized live Pull-forward observation retained the expected3-role route
+but stopped before validation because Coordinator dropped a material expedited
+freight flag. Unsupported approvals and option-scoping contradictions persisted.
+Production's observed210-versus180 availability overstatement prompted a final
+instruction clarification: use the earlier cell-availability/shift end, then
+subtract reserved work once; this last wording is offline-only verified.
+See `docs/v2.md` for the actual results and limits; additional instructions are
+not evidence of reliable model reasoning or a validated plan.
+
 ## Additional approved synthetic cases
 
 Same Thursday14:00 snapshot, part MB-217 and fictional Tier-1 context:
