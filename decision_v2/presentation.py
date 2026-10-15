@@ -3,7 +3,7 @@ import textwrap
 from datetime import datetime
 
 from .contracts import SCENARIO_ID
-from .fixtures import SNAPSHOT, delivery_position, fixture_records, issue_id, operational_position, operational_checks
+from .fixtures import SNAPSHOT, delivery_position, fixture_records, issue_id, operational_position, operational_checks, operational_options
 
 LABELS = {
     "shipment_arrival": "replacement arrival unconfirmed",
@@ -123,23 +123,35 @@ class Presenter:
         self.line(f"SYNTHETIC {build.title} | snapshot {display_time(SNAPSHOT)}")
         self.line(f"{build.customer} | order {build.order_id}")
         self.line(build.context)
+        expected = {"carrier-delay-v2": "0 (resolved carrier record)",
+                    "production-resequence-v2": "1 (Production cell comparison)",
+                    "order-pull-forward-v2": "3 (capacity, freight and customer tradeoffs)"}[self.scenario_id]
+        self.line(f"Expected specialist route: {expected}. Live decisions may differ; no forced routing.")
         self.line(f"Demand {position['demand_units']}; unallocated released finished units "
                   f"{position['available_stock_units']}; planned production {build.production_units}.")
         if build.production_units or stock.released_material_units:
             self.line(f"Released materials {stock.released_material_units} minus other-order reservations "
                       f"{stock.materials_reserved_other_orders} = {position['available_material_units']} available.")
-        if build.cell:
+        if build.options:
+            for key, option in operational_options(records).items():
+                self.line(f"Unselected option {key}: {option['position']['production_minutes']} cell minutes; "
+                          f"ready {display_time(option['position']['ready_at'])}; "
+                          f"freight ${option['freight_total_usd']:,} / ${policy.planner_limit_usd:,} authority.")
+                for quantity, arrival in zip(option["leg_quantities"], option["arrivals"]):
+                    self.line(f"  {quantity} units arrive {display_time(arrival)}.")
+        elif build.cell:
             self.line(f"Cell {build.cell.cell_id}: {position['production_minutes']} setup/production minutes "
                       f"against {position['available_cell_minutes']:g} unreserved staffed minutes; "
                       f"qualification {build.cell.qualification_reference or 'unverified'}.")
-        if position["ready_at"]:
+        if not build.options and position["ready_at"]:
             self.line("Ready plan: " + display_time(position["ready_at"]))
-        self.line(f"{shipment.carrier}: booking cutoff {display_time(shipment.booking_cutoff)}; "
-                  f"pickup {display_time(shipment.pickup_at)}, {shipment.transit_minutes} transit minutes.")
-        self.line(f"Arrival plan {display_time(position['arrival_at'])}; customer window "
-                  f"{display_time(shipment.window_start)} to {display_time(shipment.window_end)}.")
-        self.line(f"Incremental freight ${shipment.freight_cost_usd:,} against ${policy.planner_limit_usd:,} authority. "
-                  f"Customer schedule/request reference: {shipment.commitment_reference or 'missing'}.")
+        if not build.options:
+            self.line(f"{shipment.carrier}: booking cutoff {display_time(shipment.booking_cutoff)}; "
+                      f"pickup {display_time(shipment.pickup_at)}, {shipment.transit_minutes} transit minutes.")
+            self.line(f"Arrival plan {display_time(position['arrival_at'])}; customer window "
+                      f"{display_time(shipment.window_start)} to {display_time(shipment.window_end)}.")
+            self.line(f"Incremental freight ${shipment.freight_cost_usd:,} against ${policy.planner_limit_usd:,} authority. "
+                      f"Customer schedule/request reference: {shipment.commitment_reference or 'missing'}.")
         for key, supported in operational_checks(records).items():
             if not supported:
                 self.line("Unsupported evidence: " + self.labels[key])
@@ -160,6 +172,8 @@ class Presenter:
                 self.line(blocker)
         self.line("Next: select contributing specialists." if required else
                   "No further assessment recommended; no expert proposal or proposal validation was performed.")
+        if not required:
+            self.line("Actual specialist route: 0 | none.")
 
     def choice(self, label, answer, selection=False):
         if selection:
@@ -201,6 +215,8 @@ class Presenter:
             for key in finding.evidence_ids
         ))
         self.line("  Recommended next step: " + ACTION_LABELS[finding.recommended_action])
+        if finding.selected_option_id:
+            self.line("  Option considered: " + finding.selected_option_id)
         if finding.unknown_keys:
             self.line("  Still missing: " + "; ".join(self.labels[k] for k in finding.unknown_keys))
         self.record("complete finding/provenance", finding)
@@ -210,6 +226,8 @@ class Presenter:
             self.section("INITIAL PLAN")
         self.line(("Updated" if state.revision else "Initial") + " coordinator proposal: " + state.proposal.brief)
         self.line("Next step: " + ACTION_LABELS[state.proposal.recommended_action])
+        if state.proposal.selected_option_id:
+            self.line("Selected planning option: " + state.proposal.selected_option_id + " (model recommendation, not execution).")
         if state.proposal.unknown_keys:
             self.line("Missing evidence: " + "; ".join(self.labels[k] for k in state.proposal.unknown_keys))
         for conflict in state.proposal.conflicts:
@@ -222,6 +240,14 @@ class Presenter:
             self.line("No assessed proposal is available; this is not a validated plan.")
         if state.policies:
             self.line("Required owner handoffs: " + "; ".join(self.labels[k] for k in state.policies))
+            if self.scenario_id != SCENARIO_ID and state.proposal:
+                records = fixture_records(self.scenario_id)
+                selected = operational_options(records).get(state.proposal.selected_option_id)
+                if (selected and all(selected["checks"].values()) and selected["approved_carriers"]
+                        and selected["freight_total_usd"] <= records["read_approval_policy"].planner_limit_usd):
+                    self.line("Canonical selected option fits recorded staffed capacity and existing freight "
+                              "authority. Model-reported approvals/dependency disagreements still need review; "
+                              "they are not proof that new authority or overtime is required.")
         self.section("HUMAN CLARIFICATION")
         if self.scenario_id == SCENARIO_ID and "customer_delivery_change" in request.allowed_keys:
             first, second = fixture_records()["read_build"].deliveries

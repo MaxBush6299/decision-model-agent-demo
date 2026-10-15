@@ -14,7 +14,7 @@ from .contracts import (
     AGENTS, SCENARIO_ID, ScenarioId, CoordinatedProposal, DemoError, ExpertFinding,
     RunState, validate_proposal, validate_references,
 )
-from .fixtures import ALLOWLIST, authoritative_constraints, delivery_position, domain_unknowns, fixture_records, issue_id, issue_text
+from .fixtures import ALLOWLIST, authoritative_constraints, delivery_position, domain_unknowns, fixture_records, fixture_payload, issue_id, issue_text
 from .runtime import AzureRuntime, CURRENT_CALL
 
 INSTRUCTIONS = {
@@ -44,8 +44,8 @@ class FixtureGuard(FunctionMiddleware):
         ):
             raise MiddlewareFailure("Fixture returned error content; no repair turn permitted.")
         record = fixture_records(self.state.scenario_id)[context.function.name]
-        self.state.evidence[record.evidence_id] = record.model_dump(mode="json")
-        self.runtime.budget.trace(f"Evidence {record.evidence_id}: {record.model_dump_json()}")
+        self.state.evidence[record.evidence_id] = fixture_payload(record)
+        self.runtime.budget.trace(f"Evidence {record.evidence_id}: {json.dumps(fixture_payload(record))}")
 
 
 def fixture_tool(name: str, selected_scenario: ScenarioId = SCENARIO_ID):
@@ -55,7 +55,7 @@ def fixture_tool(name: str, selected_scenario: ScenarioId = SCENARIO_ID):
     async def read_fixture(scenario_id: ScenarioId) -> str:
         if scenario_id != selected_scenario:
             raise DemoError("Unsupported synthetic scenario.")
-        return record.model_dump_json()
+        return json.dumps(fixture_payload(record))
 
     return read_fixture
 
@@ -140,10 +140,21 @@ class ExpertTeam:
             "Set uses_expedited_freight for any recommendation relying on the dedicated courier, even "
             "when its main action is containment/schedule recovery; check existing spending authority. "
             "Within documented approved-carrier/planner limits, do not invent a new approval requirement. "
+            "When canonical records offer unselected planning options, compare them rather than treating "
+            "the first as chosen. Each specialist and Coordinator must set selected_option_id to its "
+            "recommended supplied option ID (or null when not making an option recommendation). "
+            "Briefly explain the tradeoff. All dependency flags and option-specific approval requests "
+            "describe only that selected option, not the union of every alternative mentioned. "
+            "For split deliveries check every leg, aggregate freight and preserved reservations. "
+            "Staffed ready times before shift end do not require overtime; expedited service within "
+            "the documented approved roster and spending limit does not require new freight authority. "
             "Set changes_customer_commitment truthfully; unverified customer flexibility still needs review. "
             "Include every required_unknown_key and preserve previous_conflicts exactly. "
-            "Coordinator must cite every finding_refs agent/revision and preserve the union of "
-            "unknown_keys, approval_requests and conflicts. Never claim real-world resolution."
+            "Coordinator must cite every finding_refs agent/revision. Preserve all unknown_keys, "
+            "conflicts and global containment/notification requirements. Preserve dependency flags and "
+            "approval_requests from findings for the same selected option or with no option scope; "
+            "do not apply a discarded alternative's freight/overtime to the chosen plan. "
+            "Never claim real-world resolution."
         )
         agent = Agent(client=provider, name=actor, id=actor, instructions=instructions, tools=tools)
         self.agents[(actor, state.revision)] = agent
@@ -171,9 +182,9 @@ class ExpertTeam:
             input_data["findings"] = [state.findings[a].model_dump(mode="json") for a in state.active]
             input_data["authoritative_constraints"] = authoritative_constraints(state.scenario_id)
             records = fixture_records(state.scenario_id)
-            state.evidence.update({record.evidence_id: record.model_dump(mode="json")
+            state.evidence.update({record.evidence_id: fixture_payload(record)
                                    for record in records.values()})
-            input_data["canonical_records"] = {name: record.model_dump(mode="json") for name, record in records.items()}
+            input_data["canonical_records"] = {name: fixture_payload(record) for name, record in records.items()}
             budget.trace("Canonical fixture evidence supplied to Coordinator; no extra tool/model calls: "
                          + ", ".join(record.evidence_id for record in records.values()))
         self.runtime.budget.trace(f"Agent {actor}: assess revision={state.revision}")
@@ -186,19 +197,23 @@ class ExpertTeam:
                         "temperature": .2, "store": False,
                     },
                 ), budget.remaining())
+                value = response.value
         except (OpenAIError, AgentFrameworkException, ValidationError, ClientAuthenticationError) as exc:
             original = underlying_demo_error(exc)
             if original:
                 raise original from exc
             raise DemoError(f"{actor} model/auth/structured-output failure; no retry or repair was made.") from exc
-        if not isinstance(response.value, output_type) or response.finish_reason != "stop":
+        if not isinstance(value, output_type) or response.finish_reason != "stop":
             raise DemoError(f"{actor} returned no valid completed typed output.")
-        return response.value
+        return value
 
     async def assess(self, actor: str, state: RunState) -> ExpertFinding:
         finding = await self.invoke(actor, state, ExpertFinding)
         if finding.agent_id != actor or finding.revision != state.revision:
             raise DemoError("Specialist returned wrong identity/revision.")
+        options = getattr(fixture_records(state.scenario_id)["read_build"], "options", ())
+        if finding.selected_option_id is not None and finding.selected_option_id not in {o.option_id for o in options}:
+            raise DemoError("Specialist selected an option absent from canonical evidence; no repair was made.")
         if finding.uses_held_stock or (state.scenario_id == SCENARIO_ID and not finding.containment_required):
             raise DemoError("Specialist cannot release held stock or omit shipped-lot containment.")
         executed = self.runtime.budget.tools[(actor, state.revision)]
@@ -240,6 +255,9 @@ class ExpertTeam:
             raise DemoError("Incomplete or empty expert join; coordinator cannot proceed.")
         proposal = await self.invoke("coordinator", state, CoordinatedProposal)
         validate_proposal(proposal, state)
+        options = getattr(fixture_records(state.scenario_id)["read_build"], "options", ())
+        if proposal.selected_option_id is not None and proposal.selected_option_id not in {o.option_id for o in options}:
+            raise DemoError("Coordinator selected an option absent from canonical evidence; no repair was made.")
         if not state.active:
             required = set().union(*(domain_unknowns(a, state.scenario_id) for a in AGENTS))
             if not required.issubset(proposal.unknown_keys):

@@ -9,7 +9,7 @@ from .contracts import (
     AGENTS, AFFECTED, SCENARIO_ID, ClarificationRequest, DemoError, FinalResult, HumanEvidence,
     HumanResponse, RunState, affected_agents,
 )
-from .fixtures import assessment_blockers, fixture_records, policy_requirements, validate_delivery_change
+from .fixtures import assessment_blockers, fixture_records, option_disagreements, policy_requirements, validate_delivery_change
 from .presentation import Presenter
 from .runtime import Budget, DecisionClient
 
@@ -47,6 +47,7 @@ class SelectionExecutor(Executor):
             else:
                 self.presenter.diagnostic(f"Skipped specialist: {actor}")
         state.refresh = list(state.active)
+        self.presenter.line(f"Actual specialist route: {len(state.active)} | " + (", ".join(state.active) or "none"))
         if not state.active:
             self.presenter.line("No specialist selected confidently; Coordinator will assess canonical "
                                 "evidence directly. This is not a no-assessment disposition.")
@@ -108,6 +109,11 @@ def review_reasons(state: RunState) -> list[str]:
     ):
         reasons.append("Validation unresolved: " + state.validation.selected)
     if state.proposal:
+        if state.scenario_id != SCENARIO_ID:
+            reasons.extend(option_disagreements(state.proposal, fixture_records(state.scenario_id)))
+        if (state.scenario_id != SCENARIO_ID and fixture_records(state.scenario_id)["read_build"].options
+                and state.proposal.selected_option_id is None):
+            reasons.append("Planning choice unresolved: Coordinator did not select an evidenced option.")
         if state.proposal.unknown_keys:
             reasons.append("Unknown domain evidence: " + ", ".join(state.proposal.unknown_keys))
         if state.proposal.conflicts:

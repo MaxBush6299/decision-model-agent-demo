@@ -346,3 +346,48 @@ the reported carrier scores, no retries and revised caps, token pacing, generic
 pending/escalation and provisional-window context. CLI help, pip consistency
 and diff checks pass. Live test ceiling respected: four initial plus two
 corrective runs, with complete private captures and explicit failed-run results.
+
+## User-directed expected 0 / 1 / 3 scenario revision
+
+The user selected live-model expectations rather than fixed routing presets.
+
+- [x] Preserve resolved carrier and advanced quality fixtures/alias. Replace
+  Production's single answer with qualified P2/P3 setup/runtime/readiness choices.
+  Replace Pull-forward's single answer with evidenced full400/overnight1800 versus
+  split160+240/standing-route0 choices, protecting SO-6702's200 materials,
+  17:00-19:00 capacity and Friday14:00 delivery.
+- [x] Use the existing four tools with bounded immutable option/leg/customer
+  records. Omit single-option reference projections from model inputs; retain
+  neutral arithmetic for every option without a host-selected preferred answer.
+  Add Coordinator selected_option_id, explicit unknown-ID failure and missing-
+  selection business review. Check all selected legs and aggregate freight.
+- [x] Keep two-stage Decision-1 decisions, thresholds, conservative consultation,
+  Coordinator-only fallback and all auth/call/tool/deadline guards. Render
+  expected-versus-actual routes without expected counts in model prompts.
+- [x] Verify actual-framework fake-provider option/citation/policy paths plus
+  unchanged v1 regression suite:135 tests pass before the new live batch.
+- [x] Run one authorized Production and one Pull-forward live case; critically
+  inspect routes, findings, option arithmetic, reservations, authority and final
+  review. At most2 corrective reruns only for concrete bugs, never count-fishing.
+  Production completed1-role/P2/positive validation,3D1+4GPT/2tools in136.9s.
+  Pull-forward invoked all3,2D1+7GPT/6tools in240.1s, then validation auth failed:
+  AzureCliCredential "Azure CLI not found on path". Stop without credential/PATH
+  workaround or further inference;2 of4 run slots used.
+- [x] Fix observed alternative contamination with option-scoped finding/
+  synthesis dependencies and approvals; preserve global unknowns/conflicts/
+  containment/notification. Explicitly review canonical selected-option
+  overtime/freight/displacement contradictions instead of rewriting model output.
+  Restore the missing shared planner limit in option-case issue context, so
+  Supply-chain/Production need no extra policy-tool access. Commercial already
+  had policy, so missing context is not the sole explanation of model conservatism.
+- [x] Record actual versus expected counts, including all conservative
+  consultations after weak raw not_needed scores. Mark final corrections
+  offline-only; live final-code validation remains blocked by authentication.
+- [x] Verify final scoped changes and commit locally without push, cloud,
+  dependency, v1 or site edits.
+
+Final offline acceptance:140 tests (34 unchanged v1,106 v2), CLI help, dependency
+consistency and diff checks pass. Customer full/split records include independent
+window starts as well as due times; shifted carrier windows cannot authorize an
+early delivery. No additional live runs occurred after the authentication stop.
+Final-code live validation remains explicitly blocked, not marked successful.

@@ -18,6 +18,15 @@ specialists. Uncertain routing now conservatively assesses, never asks humans
 to settle role relevance. This supersedes the earlier routing gate and raises
 only Decision-1/total attempt ceilings to4/24 (GPT remains20).
 
+The user next requested scenarios invoking none, one and all specialists and
+selected **expected live-model routes**, not fixed presets. Carrier remains the
+resolved0-role example; Production becomes a genuine qualified-cell comparison
+(expected Production only); Pull-forward becomes linked full/split capacity,
+freight and customer tradeoffs (expected all3). Quality remains unchanged.
+These are expectations, not model input assignments or guaranteed live counts.
+Two initial live checks (Production/Pull-forward) plus at most two corrective
+reruns are authorized; route variance alone does not justify rerunning or tuning.
+
 ## Additional approved synthetic cases
 
 Same Thursday14:00 snapshot, part MB-217 and fictional Tier-1 context:
@@ -27,18 +36,25 @@ Same Thursday14:00 snapshot, part MB-217 and fictional Tier-1 context:
   Thursday14:30 booking cutoff,15:00 pickup and1110min transit support
   Friday09:30. Inventory/build evidence confirms readiness independently
   from shipping/authority/customer-window evidence.
-- Production resequence: SO-6102 needs500:100 finished+400 new.440 released
+- Production resequence, expected1 Production: SO-6102 needs500:100 finished+400 new.440 released
   material units support400 planned units plus buffer. P1 is unavailable.
   Qualified P2 has240 staffed/unreserved minutes; setup30+run150 at160/hour
   plus separate packing60 yields Thursday18:30 readiness. Standard Friday05:30
   pickup+240min transit yields09:30 within09:00-11:00, without overtime,
-  new qualification or customer change.
-- Order pull-forward: evidenced EDI customer planning amendment CR-6701
-  requests400 Friday10:00-12:00, earlier than original16:00.160 finished+240
+  new qualification or customer change. Compare with qualified P3: Thursday14:15
+  start, setup10+run240 at100/hour=250 cell minutes of300 available; separate
+  packing60 yields19:25 readiness within staffed20:00 end. Neither is selected;
+  lower setup and faster processing/completion margins require a production choice.
+- Order pull-forward, expected all3: evidenced EDI customer planning record CR-6701
+  permits full400 Friday09:00-10:00 or split160 in that window plus240 Friday14:00-16:00,
+  earlier than original16:00. One early receipt is preferred, split explicitly
+  acceptable for planning; neither option has been chosen.160 finished+240
   new;600 materials-200 reserved=400 available. Qualified C4 has300 staffed
   minutes-120 reserved=180 available; main setup30+run120=150, ready after
   packing at18:00. SO-6702's200 units retain17:00-19:00 production,200 materials
-  and Friday14:00 delivery. Standard Friday06:00 pickup+240min transit gives10:00.
+  and Friday14:00 delivery. Full: approved overnight1800<2500, Thursday18:30
+  pickup+900min transit gives Friday09:30. Split: standard pickups Friday05:30
+  and10:00+240min give09:30 and14:00, aggregate incremental freight0.
   Customer request is synthetic planning evidence, not model-created consent.
 
 Four immutable record boundaries provide distinct source IDs per scenario.
@@ -61,6 +77,26 @@ Host canonical checks reconcile material/finished-stock demand, setup/rate/
 staffed minutes, reservations, qualification, ready/pickup/cutoff/arrival/window,
 approved carrier and freight authority, and documented customer request.
 Unsupported evidence or policy requires review even with positive validation.
+Bounded typed build options match shipment options (at most2 options/2 legs).
+Customer options explicitly evidence full/split quantities and dates. No host
+preferred answer is supplied. Coordinator selects a supplied `selected_option_id`;
+unknown IDs fail without repair and missing selection requires business review.
+Checks use the selected option, all leg quantities/cutoffs/windows, aggregate
+freight and protected reservations. Model inputs omit single-option reference
+projections when alternatives exist. Expected route counts appear only in
+terminal/docs; overall/role scoring and conservative consultation are unchanged.
+Findings scope their recommendation/dependencies with selected_option_id too.
+Coordinator preserves same-option or unscoped dependencies/approvals; explicitly
+discarded alternatives do not impose their freight/overtime on the selected
+plan. Unknowns, conflicts and global containment/notification remain preserved.
+Canonical selected-option dependency mismatches require explicit review, not
+host rewriting or successful completion. This correction followed live
+Pull-forward output contaminating a selected split plan with full-option flags.
+Production completed live with1 role; Pull-forward reached all3 but validation
+was blocked by AzureCliCredential reporting "Azure CLI not found on path".
+No credential/PATH workaround or further inference followed; final corrections
+are offline-verified only. Details and raw-versus-effective route distinctions
+are recorded in the startup guide.
 No quality hold, suspect shipment or mandatory Quality notification is fabricated
 on healthy cases. Typed action enums and preserved dependency flags cover
 alternative carrier/cell, pull-forward, overtime and displacement; no keyword

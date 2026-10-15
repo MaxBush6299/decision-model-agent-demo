@@ -19,7 +19,7 @@ from .contracts import (
     AGENTS, SCENARIO_ID, SCENARIO_IDS, ScenarioId, DemoError, RunState, SELECTION_OPTIONS, VALIDATION_OPTIONS,
     ASSESSMENT_OPTIONS, parse_choices,
 )
-from .fixtures import ALLOWLIST, authoritative_constraints, fixture_records, issue_text, routing_context
+from .fixtures import ALLOWLIST, authoritative_constraints, fixture_records, fixture_payload, issue_text, routing_context
 
 DECISION_SCOPE = "https://cognitiveservices.azure.com/.default"
 LLM_SCOPE = "https://ai.azure.com/.default"
@@ -361,7 +361,7 @@ class DecisionClient:
         }}
         payload = await self.ask({
             "scenario_id": state.scenario_id, "original_issue": issue_text(state.scenario_id),
-            "fixture": {name: record.model_dump(mode="json") for name, record in fixture_records(state.scenario_id).items()},
+            "fixture": {name: fixture_payload(record) for name, record in fixture_records(state.scenario_id).items()},
             "authoritative_constraints": authoritative_constraints(state.scenario_id),
         }, questions, "assessment", 0)
         return parse_choices(payload, ["assessment_needed"], ASSESSMENT_OPTIONS)["assessment_needed"]
@@ -406,7 +406,7 @@ class DecisionClient:
         }
         context = {
             "scenario_id": state.scenario_id, "original_issue": issue_text(state.scenario_id),
-            "fixture": {name: record.model_dump(mode="json") for name, record in fixture_records(state.scenario_id).items()},
+            "fixture": {name: fixture_payload(record) for name, record in fixture_records(state.scenario_id).items()},
         }
         if operational:
             context["routing_context"] = routing_context(state.scenario_id)
@@ -432,7 +432,9 @@ class DecisionClient:
                  "packing/readiness versus pickup, snapshot versus booking cutoff, transit versus documented "
                  "customer window, approved carrier/freight cost versus existing authority, and evidenced "
                  "customer requests. Check typed dependencies/overtime/displacement flags against text and "
-                 "canonical records. A supported case can be ready for responsible-owner planning without "
+                 "the selected_option_id: no option is preselected; verify every selected dispatch leg, "
+                 "aggregate cost, customer full/split consent and preserved other-order reservations "
+                 "against canonical records. A supported case can be ready for responsible-owner planning without "
                  "new approvals; do not force acceptance or invent uncertainty. ") +
                 "An offer is not received/accepted inventory; human assertions are not release, "
                 "customer or spending authority. Preserve approvals, unknowns and conflicts. "
@@ -445,7 +447,7 @@ class DecisionClient:
         }}
         context = {
             "scenario_id": state.scenario_id, "original_issue": issue_text(state.scenario_id),
-            "fixture": {k: v.model_dump(mode="json") for k, v in fixture_records(state.scenario_id).items()},
+            "fixture": {k: fixture_payload(v) for k, v in fixture_records(state.scenario_id).items()},
             "findings": [state.findings[a].model_dump(mode="json") for a in state.active],
             "human_evidence": [e.model_dump(mode="json") for e in state.overlays],
             "proposal": state.proposal.model_dump(mode="json"),

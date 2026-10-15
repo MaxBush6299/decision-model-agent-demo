@@ -196,9 +196,9 @@ def authoritative_constraints(scenario_id: ScenarioId = SCENARIO_ID) -> dict:
     records = fixture_records(scenario_id)
     if scenario_id != SCENARIO_ID:
         return {
-            "records": {name: record.model_dump(mode="json") for name, record in records.items()},
             "checks": operational_checks(records),
-            "position": operational_position(records),
+            "unselected_options": operational_options(records),
+            "position": None if records["read_build"].options else operational_position(records),
             "no_execution_authority": True,
         }
     position = delivery_position()
@@ -240,6 +240,18 @@ def issue_text(scenario_id: ScenarioId = SCENARIO_ID) -> str:
     records = fixture_records(scenario_id)
     build, shipment = records["read_build"], records["read_shipment"]
     position = operational_position(records)
+    if build.options:
+        return (
+            f"SYNTHETIC {build.title}, snapshot {SNAPSHOT}. {build.context} "
+            f"Order {build.order_id}: {position['demand_units']} units, "
+            f"{position['available_stock_units']} independently released finished units, "
+            f"{position['available_material_units']} unreserved released materials. "
+            f"Existing planner authority ${records['read_approval_policy'].planner_limit_usd:,}; "
+            "this planning limit does not authorize execution. "
+            "Compare the explicitly unselected options; no recommended option is supplied. "
+            "All evidence is fictional and read-only; no quality incident exists. "
+            "Preserve documented customer alternatives, other-order reservations and existing authority."
+        )
     return (
         f"SYNTHETIC {build.title}, snapshot {SNAPSHOT}. {build.context} "
         f"Order {build.order_id}: {position['demand_units']} units, "
@@ -269,8 +281,13 @@ def assessment_blockers(scenario_id: ScenarioId) -> list[str]:
     shipment, policy = records["read_shipment"], records["read_approval_policy"]
     if scenario_id == SCENARIO_ID:
         reasons.append("Quality containment and responsible customer notification remain required.")
-    elif shipment.freight_cost_usd > policy.planner_limit_usd or not shipment.approved_carrier:
-        reasons.append("Carrier/freight authority requires owner review.")
+    else:
+        options = operational_options(records)
+        authorized = (any(option["freight_total_usd"] <= policy.planner_limit_usd and option["approved_carriers"]
+                          for option in options.values()) if options else
+                      shipment.freight_cost_usd <= policy.planner_limit_usd and shipment.approved_carrier)
+        if not authorized:
+            reasons.append("Carrier/freight authority requires owner review.")
     return reasons
 
 
@@ -322,6 +339,14 @@ class CommittedOrder(StrictModel):
     material_reserved_units: int = Field(ge=0)
 
 
+class BuildOption(StrictModel):
+    option_id: str = Field(min_length=1, max_length=64)
+    cell: QualifiedCell
+    production_units: int = Field(ge=0)
+    packing_minutes: int = Field(ge=0)
+    deliveries: tuple[Delivery, ...] = Field(min_length=1, max_length=2)
+
+
 class OperationalBuild(FixtureRecord):
     title: str
     context: str
@@ -335,9 +360,10 @@ class OperationalBuild(FixtureRecord):
     packing_minutes: int = Field(default=0, ge=0)
     packing_station_confirmed: bool = True
     other_orders: tuple[CommittedOrder, ...] = ()
+    options: tuple[BuildOption, ...] = Field(default=(), max_length=2)
 
 
-class CarrierPlan(FixtureRecord):
+class CarrierService(StrictModel):
     shipment_id: str
     carrier: str
     service_kind: Literal["standard", "approved_alternative"] = "standard"
@@ -353,6 +379,30 @@ class CarrierPlan(FixtureRecord):
     commitment_reference: str | None
     freight_cost_usd: int = Field(ge=0)
     cost_basis: Literal["incremental_to_standing_route"] = "incremental_to_standing_route"
+    expedited: bool = False
+
+
+class DispatchLeg(CarrierService):
+    quantity: int = Field(gt=0)
+
+
+class ShipmentOption(StrictModel):
+    option_id: str = Field(min_length=1, max_length=64)
+    legs: tuple[DispatchLeg, ...] = Field(min_length=1, max_length=2)
+
+
+class CarrierPlan(FixtureRecord, CarrierService):
+    options: tuple[ShipmentOption, ...] = Field(default=(), max_length=2)
+
+
+class CustomerDelivery(Delivery):
+    window_start: str
+
+
+class CustomerDeliveryOption(StrictModel):
+    option_id: str = Field(min_length=1, max_length=64)
+    reference: str = Field(min_length=1)
+    deliveries: tuple[CustomerDelivery, ...] = Field(min_length=1, max_length=2)
 
 
 class OperatingPolicy(FixtureRecord):
@@ -363,6 +413,7 @@ class OperatingPolicy(FixtureRecord):
     customer_request_reference: str | None = None
     customer_request_quantity: int = Field(default=0, ge=0)
     customer_request_due_at: str | None = None
+    customer_delivery_options: tuple[CustomerDeliveryOption, ...] = Field(default=(), max_length=2)
     execution_rule: str = "Planning only. Responsible owners execute; models perform no shipment, production or customer writes."
 
 
@@ -401,10 +452,12 @@ def operational_records(scenario_id: ScenarioId):
                                       released_units=100, released_material_units=440,
                                       release_reference="QA-REL-FG1062-MAT4062")
         build = OperationalBuild(
-            **metadata("build"), title="Resequence on an already-qualified cell", order_id="SO-6102",
-            context="Press P1 is unavailable until Friday 12:00. Already-qualified P2 has a staffed "
-                    "Thursday 14:30-18:30 slot: 30 min setup, 160 units/hour, 60 min separate packing. "
-                    "No qualification change, overtime or customer-window change is needed.",
+            **metadata("build"), title="Choose a qualified replacement cell", order_id="SO-6102",
+            context="Press P1 is unavailable until Friday 12:00. No replacement cell has been chosen. "
+                    "Compare P2 (30-minute setup, 160/hour) with P3 (10-minute setup, 100/hour): "
+                    "different setup effort, cell occupancy and completion margins. Both are qualified "
+                    "with documented staffed slots. Stock/material allocation, the contracted pickup, "
+                    "customer window and zero incremental freight are fixed for either choice.",
             deliveries=(Delivery(order_line="10", quantity=500, due_at=common["window_end"]),),
             production_units=400, finished_ready_at=None, machine_unavailable="Press P1, maintenance MT-441",
             cell=QualifiedCell(cell_id="P2", qualification_reference="PQ-MB217-P2-REV4",
@@ -422,10 +475,14 @@ def operational_records(scenario_id: ScenarioId):
                                       release_reference="QA-REL-FG1063-MAT4063")
         build = OperationalBuild(
             **metadata("build"), title="Customer-requested order pull-forward", order_id="SO-6701",
-            context="Documented customer EDI amendment CR-6701 requests 400 units Friday 10:00-12:00 "
-                    "instead of the original Friday 16:00 due time. 160 finished units plus 240 new units "
-                    "cover the request. Cell C4 has 300 staffed minutes; 120 remain reserved for SO-6702 "
-                    "(200 units, Friday 14:00 delivery). Main order needs 150 min plus 60 min separate packing.",
+            context="Customer planning record CR-6701 asks to compare full 400 units Friday 09:00-10:00 "
+                    "with a split 160 in that window and 240 Friday 14:00-16:00. Customer prefers full "
+                    "early supply to avoid a second lineside receipt but explicitly permits either option "
+                    "for planning; no option or dispatch has been accepted. Full early requires an $1800 "
+                    "approved overnight service; split uses two standing routes at zero incremental charge. "
+                    "160 finished plus 240 new units are needed. C4's setup/run must finish before the "
+                    "17:00-19:00 reservation for SO-6702 (200 units, Friday 14:00 delivery); its materials "
+                    "and capacity cannot be borrowed. Compare delivery benefit, capacity margin and cost.",
             deliveries=(Delivery(order_line="10", quantity=400, due_at="2026-10-16T16:00:00-05:00"),),
             production_units=240, finished_ready_at=None,
             cell=QualifiedCell(cell_id="C4", qualification_reference="PQ-MB217-C4-REV2",
@@ -438,18 +495,75 @@ def operational_records(scenario_id: ScenarioId):
                 delivery_at="2026-10-16T14:00:00-05:00", material_reserved_units=200),),
         )
         shipment = CarrierPlan(**metadata("shipment"), shipment_id="SH-903",
-            carrier="Fictional standard contracted carrier",
-            **{**common, "pickup_at": "2026-10-16T06:00:00-05:00",
-               "window_start": "2026-10-16T10:00:00-05:00", "window_end": "2026-10-16T12:00:00-05:00",
-               "commitment_reference": "EDI-AMENDMENT-CR-6701"})
+            carrier="Fictional approved overnight carrier", service_kind="approved_alternative",
+            **{**common, "booking_cutoff": "2026-10-15T16:30:00-05:00",
+               "pickup_at": "2026-10-15T18:30:00-05:00", "transit_minutes": 900,
+               "window_start": "2026-10-16T09:00:00-05:00", "window_end": "2026-10-16T10:00:00-05:00",
+               "freight_cost_usd": 1800, "expedited": True, "commitment_reference": "EDI-AMENDMENT-CR-6701"})
         policy = OperatingPolicy(**metadata("policy"), customer_request_reference="EDI-AMENDMENT-CR-6701",
                                  customer_request_quantity=400, customer_request_due_at=shipment.window_end)
     else:
         raise DemoError("Unsupported operational fixture.")
+    if scenario_id == "production-resequence-v2":
+        cells = (
+            ("cell-p2", build.cell),
+            ("cell-p3", QualifiedCell(cell_id="P3", qualification_reference="PQ-MB217-P3-REV3",
+                available_from="2026-10-15T14:15:00-05:00", available_until="2026-10-15T19:15:00-05:00",
+                staffed_shift_end="2026-10-15T20:00:00-05:00", setup_minutes=10, units_per_hour=100)),
+        )
+        build = build.model_copy(update={"options": tuple(BuildOption(
+            option_id=key, cell=cell, production_units=400, packing_minutes=60, deliveries=build.deliveries,
+        ) for key, cell in cells)})
+        service = shipment.model_dump(exclude={"scenario_id", "source", "as_of", "evidence_id", "options"})
+        shipment = shipment.model_copy(update={"options": tuple(ShipmentOption(
+            option_id=key, legs=(DispatchLeg(**service, quantity=500),),
+        ) for key, _ in cells)})
+    elif scenario_id == "order-pull-forward-v2":
+        full = (Delivery(order_line="10", quantity=400, due_at="2026-10-16T10:00:00-05:00"),)
+        split = (Delivery(order_line="10a", quantity=160, due_at="2026-10-16T10:00:00-05:00"),
+                 Delivery(order_line="10b", quantity=240, due_at="2026-10-16T16:00:00-05:00"))
+        build = build.model_copy(update={"options": tuple(BuildOption(
+            option_id=key, cell=build.cell, production_units=240, packing_minutes=60, deliveries=deliveries,
+        ) for key, deliveries in (("full-early", full), ("split-standard", split)))})
+        service = shipment.model_dump(exclude={"scenario_id", "source", "as_of", "evidence_id", "options"})
+        standard = {**service, "carrier": "Fictional standard contracted carrier", "service_kind": "standard",
+                    "freight_cost_usd": 0, "transit_minutes": 240, "expedited": False}
+        shipment = shipment.model_copy(update={"options": (
+            ShipmentOption(option_id="full-early", legs=(DispatchLeg(**service, quantity=400),)),
+            ShipmentOption(option_id="split-standard", legs=(
+                DispatchLeg(**{**standard, "shipment_id": "SH-903-S1",
+                    "booking_cutoff": "2026-10-15T16:00:00-05:00", "pickup_at": "2026-10-16T05:30:00-05:00"},
+                    quantity=160),
+                DispatchLeg(**{**standard, "shipment_id": "SH-903-S2",
+                    "booking_cutoff": "2026-10-16T09:00:00-05:00", "pickup_at": "2026-10-16T10:00:00-05:00",
+                    "window_start": "2026-10-16T14:00:00-05:00", "window_end": "2026-10-16T16:00:00-05:00"},
+                    quantity=240),
+            )),
+        )})
+        policy = policy.model_copy(update={"customer_delivery_options": tuple(CustomerDeliveryOption(
+            option_id=key, reference="EDI-AMENDMENT-CR-6701", deliveries=tuple(
+                CustomerDelivery(**delivery.model_dump(), window_start=(
+                    "2026-10-16T09:00:00-05:00" if index == 0 else "2026-10-16T14:00:00-05:00"
+                )) for index, delivery in enumerate(deliveries)
+            ),
+        ) for key, deliveries in (("full-early", full), ("split-standard", split)))})
     return MappingProxyType({
         "read_inventory": inventory, "read_shipment": shipment,
         "read_build": build, "read_approval_policy": policy,
     })
+
+
+def fixture_payload(record):
+    data = record.model_dump(mode="json")
+    if isinstance(record, OperationalBuild) and record.options:
+        for key in ("cell", "production_units", "packing_minutes", "deliveries"):
+            data.pop(key)
+    elif isinstance(record, CarrierPlan) and record.options:
+        for key in CarrierService.model_fields:
+            data.pop(key)
+    elif isinstance(record, OperatingPolicy) and record.customer_delivery_options:
+        data.pop("customer_request_due_at")
+    return data
 
 
 def operational_position(records):
@@ -472,9 +586,8 @@ def operational_position(records):
 
 def routing_context(scenario_id: ScenarioId):
     records = fixture_records(scenario_id)
-    return {
+    context = {
         "source": "derived_synthetic_fixture",
-        "position": operational_position(records),
         "checks": operational_checks(records),
         "applicability": {
             "qualified_cell": records["read_build"].production_units > 0,
@@ -484,9 +597,101 @@ def routing_context(scenario_id: ScenarioId):
             actor: sorted(domain_unknowns(actor, scenario_id)) for actor in ALLOWLIST
         },
     }
+    if records["read_build"].options:
+        context["unselected_options"] = operational_options(records)
+    else:
+        context["position"] = operational_position(records)
+    return context
 
 
-def operational_checks(records):
+def operational_options(records):
+    build, shipment, policy = (records[name] for name in ("read_build", "read_shipment", "read_approval_policy"))
+    builds = {option.option_id: option for option in build.options}
+    shipments = {option.option_id: option for option in shipment.options}
+    if len(builds) != len(build.options) or len(shipments) != len(shipment.options) or set(builds) != set(shipments):
+        raise DemoError("Planning options must have unique matching build/shipment identifiers.")
+    output = {}
+    for key, option in builds.items():
+        legs = shipments[key].legs
+        if not legs or len(legs) != len(option.deliveries):
+            raise DemoError("Every planning delivery must have exactly one matching shipment leg.")
+        projected_build = build.model_copy(update={
+            "cell": option.cell, "production_units": option.production_units,
+            "packing_minutes": option.packing_minutes, "deliveries": option.deliveries, "options": (),
+        })
+        checks, positions = [], []
+        customer = next((c for c in policy.customer_delivery_options if c.option_id == key), None)
+        for index, (leg, delivery) in enumerate(zip(legs, option.deliveries)):
+            projected_shipment = shipment.model_copy(update={**leg.model_dump(exclude={"quantity"}), "options": ()})
+            projected_policy = policy.model_copy(update={
+                "customer_request_due_at": delivery.due_at,
+            })
+            projected = {**records, "read_build": projected_build, "read_shipment": projected_shipment,
+                         "read_approval_policy": projected_policy}
+            position = operational_position(projected)
+            check = _single_operational_checks(projected)
+            check["delivery_window"] &= leg.quantity == delivery.quantity
+            if records["read_inventory"].scenario_id == "order-pull-forward-v2":
+                documented = customer.deliveries if customer else ()
+                check["customer_request"] &= (
+                    customer is not None and customer.reference == leg.commitment_reference
+                    and len(documented) == len(option.deliveries)
+                    and all(c.model_dump(exclude={"window_start"}) == d.model_dump()
+                            for c, d in zip(documented, option.deliveries))
+                )
+                check["delivery_window"] &= index < len(documented) and (
+                    datetime.fromisoformat(documented[index].window_start)
+                    <= datetime.fromisoformat(position["arrival_at"])
+                    <= datetime.fromisoformat(documented[index].due_at)
+                )
+            checks.append(check)
+            positions.append(position)
+        output[key] = {
+            "position": positions[0],
+            "checks": {name: all(check[name] for check in checks) for name in checks[0]},
+            "leg_quantities": [leg.quantity for leg in legs],
+            "arrivals": [position["arrival_at"] for position in positions],
+            "freight_total_usd": sum(leg.freight_cost_usd for leg in legs),
+            "approved_carriers": all(leg.approved_carrier for leg in legs),
+            "service_kinds": [leg.service_kind for leg in legs],
+            "dependencies": {
+                "uses_alternative_carrier": any(leg.service_kind == "approved_alternative" for leg in legs),
+                "uses_expedited_freight": any(leg.expedited for leg in legs),
+                "uses_alternative_cell": bool(build.machine_unavailable),
+                "pulls_order_forward": bool(policy.customer_request_reference),
+                "requires_overtime": datetime.fromisoformat(positions[0]["ready_at"])
+                                     > datetime.fromisoformat(option.cell.staffed_shift_end),
+                "displaces_other_orders": not all(check["other_order_impact"] for check in checks),
+            },
+        }
+    return output
+
+
+def option_disagreements(proposal, records):
+    selected = operational_options(records).get(proposal.selected_option_id)
+    if selected is None:
+        return []
+    return [f"Selected-option contradiction: {key}={getattr(proposal, key)}; "
+            f"canonical {proposal.selected_option_id} records support {value}."
+            for key, value in selected["dependencies"].items() if getattr(proposal, key) != value]
+
+
+def operational_checks(records, option_id=None):
+    if records["read_build"].options:
+        options = operational_options(records)
+        if option_id is not None:
+            if option_id not in options:
+                raise DemoError("Proposal selected a planning option absent from canonical evidence.")
+            return options[option_id]["checks"]
+        feasible = [option for option in options.values() if all(option["checks"].values())]
+        return {key: bool(feasible) or all(option["checks"][key] for option in options.values())
+                for key in next(iter(options.values()))["checks"]}
+    if option_id is not None:
+        raise DemoError("This case has no selectable planning options.")
+    return _single_operational_checks(records)
+
+
+def _single_operational_checks(records):
     stock, build, shipment, policy = (records[name] for name in
                                      ("read_inventory", "read_build", "read_shipment", "read_approval_policy"))
     position, cell = operational_position(records), build.cell
@@ -535,11 +740,16 @@ def operational_policy(proposal, records):
     if proposal.uses_held_stock:
         raise DemoError("Held stock cannot be used by any scenario.")
     required = set(proposal.approval_requests)
-    checks = operational_checks(records)
+    checks = operational_checks(records, proposal.selected_option_id)
     shipment, policy = records["read_shipment"], records["read_approval_policy"]
-    if shipment.freight_cost_usd > policy.planner_limit_usd or not shipment.approved_carrier or not checks["carrier_confirmation"]:
+    options = operational_options(records)
+    selected = options.get(proposal.selected_option_id)
+    cost = selected["freight_total_usd"] if selected else shipment.freight_cost_usd
+    approved = selected["approved_carriers"] if selected else shipment.approved_carrier
+    standard = all(kind == "standard" for kind in selected["service_kinds"]) if selected else shipment.service_kind == "standard"
+    if cost > policy.planner_limit_usd or not approved or not checks["carrier_confirmation"]:
         required.add("freight_authority")
-    if shipment.service_kind == "standard" and (
+    if standard and (
         proposal.uses_expedited_freight or proposal.uses_alternative_carrier
         or proposal.recommended_action in ("expedite_freight", "switch_approved_carrier")
     ):
@@ -554,7 +764,8 @@ def operational_policy(proposal, records):
         required.add("customer_commitment")
     if not all(checks[key] for key in ("production_capacity", "qualified_cell", "material_allocation", "other_order_impact")) or proposal.requires_overtime:
         required.add("production_authority")
-    cell = records["read_build"].cell
+    cell = next((option.cell for option in records["read_build"].options
+                 if option.option_id == proposal.selected_option_id), records["read_build"].cell)
     if (proposal.uses_alternative_cell or proposal.recommended_action == "use_qualified_cell") and (
         cell is None or not cell.qualification_reference
     ):

@@ -25,7 +25,7 @@ from decision_v2.runtime import AzureRuntime, DecisionClient, DECISION_SCOPE, LL
 from decision_v2.agents import ExpertTeam
 from decision_v2.contracts import AGENTS, RunState, ISSUE_ID
 from decision_v2.fixtures import ALLOWLIST, domain_unknowns, initial_evidence
-from decision_v2.workflow import build_workflow
+from decision_v2.workflow import build_workflow, review_reasons
 from decision_v2.contracts import FinalResult
 from decision_v2.cli import run_demo, read_terminal, parse_terminal_response, safe_text, main
 from decision_v2.presentation import Presenter
@@ -345,6 +345,8 @@ class MockFoundry:
             findings = data["findings"]
             output = {
                 "revision": data["revision"], "recommended_action": action,
+                "selected_option_id": {"production-resequence-v2": "cell-p2",
+                                       "order-pull-forward-v2": "split-standard"}.get(scenario),
                 "uses_held_stock": any(f["uses_held_stock"] for f in findings),
                 "uses_expedited_freight": any(f["uses_expedited_freight"] for f in findings),
                 "containment_required": quality or any(f["containment_required"] for f in findings),
@@ -365,6 +367,8 @@ class MockFoundry:
             filled = [e["evidence_id"] for e in data["human_evidence"] if e["key"] in domain_unknowns(actor, scenario)]
             output = {
                 "agent_id": actor, "revision": data["revision"],
+                "selected_option_id": {"production-resequence-v2": "cell-p2",
+                                       "order-pull-forward-v2": "split-standard"}.get(scenario),
                 "uses_held_stock": False, "uses_expedited_freight": False, "containment_required": quality,
                 "uses_alternative_carrier": scenario == "carrier-delay-v2",
                 "uses_alternative_cell": scenario == "production-resequence-v2",
@@ -842,6 +846,227 @@ class ScenarioTests(unittest.IsolatedAsyncioTestCase):
         events = [event async for event in workflow.run(state, stream=True)]
         return runtime, state, workflow, events
 
+    def test_production_has_two_unselected_qualified_cell_choices(self):
+        from decision_v2.fixtures import operational_options
+        records = fixture_records("production-resequence-v2")
+        self.assertEqual({option.cell.cell_id for option in records["read_build"].options}, {"P2", "P3"})
+        options = operational_options(records)
+        self.assertEqual(set(options), {"cell-p2", "cell-p3"})
+        self.assertEqual(options["cell-p2"]["position"]["production_minutes"], 180)
+        self.assertEqual(options["cell-p3"]["position"]["production_minutes"], 250)
+        self.assertEqual(options["cell-p2"]["position"]["ready_at"], "2026-10-15T18:30:00-05:00")
+        self.assertEqual(options["cell-p3"]["position"]["ready_at"], "2026-10-15T19:25:00-05:00")
+        self.assertTrue(all(all(option["checks"].values()) for option in options.values()))
+        self.assertEqual({option["freight_total_usd"] for option in options.values()}, {0})
+        self.assertNotIn("preferred", options)
+        for option in records["read_build"].options:
+            with self.assertRaises(ValidationError):
+                option.cell.units_per_hour = 999
+
+    def test_pull_forward_offers_evidenced_full_and_split_options_without_displacement(self):
+        from decision_v2.fixtures import operational_options
+        records = fixture_records("order-pull-forward-v2")
+        options = operational_options(records)
+        self.assertEqual(set(options), {"full-early", "split-standard"})
+        self.assertEqual(options["full-early"]["freight_total_usd"], 1800)
+        self.assertEqual(options["split-standard"]["freight_total_usd"], 0)
+        self.assertEqual(options["full-early"]["leg_quantities"], [400])
+        self.assertEqual(options["split-standard"]["leg_quantities"], [160, 240])
+        self.assertEqual(options["full-early"]["arrivals"], ["2026-10-16T09:30:00-05:00"])
+        self.assertEqual(options["split-standard"]["arrivals"],
+                         ["2026-10-16T09:30:00-05:00", "2026-10-16T14:00:00-05:00"])
+        self.assertTrue(all(all(option["checks"].values()) for option in options.values()))
+        self.assertEqual(records["read_build"].other_orders[0].quantity, 200)
+        self.assertEqual(records["read_inventory"].materials_reserved_other_orders, 200)
+        self.assertEqual({option.option_id for option in records["read_approval_policy"].customer_delivery_options},
+                         {"full-early", "split-standard"})
+
+    async def test_coordinator_selected_option_drives_policy_without_host_preference(self):
+        for option in ("full-early", "split-standard"):
+            service, base = MockFoundry(), MockFoundry()
+            def selected(request, body):
+                response = base(request)
+                if request.url.path.endswith("/chat/completions"):
+                    data = json.loads(next(m["content"] for m in body["messages"] if m["role"] == "user"))
+                    if data["actor"] == "coordinator":
+                        payload = response.json()
+                        output = json.loads(payload["choices"][0]["message"]["content"])
+                        output["selected_option_id"] = option
+                        output["uses_alternative_carrier"] = option == "full-early"
+                        output["uses_expedited_freight"] = option == "full-early"
+                        payload["choices"][0]["message"]["content"] = json.dumps(output)
+                        return httpx.Response(200, json=payload)
+                return response
+            service.override = selected
+            runtime, state, workflow, events = await self.first_run("order-pull-forward-v2", service)
+            self.assertEqual(state.proposal.selected_option_id, option)
+            self.assertEqual(state.policies, [])
+            self.assertFalse(any(event.type == "request_info" for event in events))
+
+    def test_split_policy_checks_combined_freight_and_each_leg_not_first_leg_only(self):
+        from decision_v2.fixtures import operational_options
+        records = dict(fixture_records("order-pull-forward-v2"))
+        shipment = records["read_shipment"]
+        split = next(option for option in shipment.options if option.option_id == "split-standard")
+        legs = tuple(leg.model_copy(update={"freight_cost_usd": 1400}) for leg in split.legs)
+        changed = split.model_copy(update={"legs": legs})
+        records["read_shipment"] = shipment.model_copy(update={
+            "options": tuple(changed if option.option_id == split.option_id else option for option in shipment.options),
+        })
+        self.assertEqual(operational_options(records)["split-standard"]["freight_total_usd"], 2800)
+        proposal = CoordinatedProposal(
+            revision=0, recommended_action="accept_requested_window", selected_option_id="split-standard",
+            brief="Compare supplied options.", uses_held_stock=False, uses_expedited_freight=False,
+            containment_required=False, changes_customer_commitment=False, finding_refs=[], evidence_ids=[],
+            unknown_keys=[], approval_requests=[], conflicts=[],
+        )
+        self.assertIn("freight_authority", policy_requirements(proposal, records))
+
+    def test_split_second_leg_quantity_window_and_reservations_are_checked(self):
+        from decision_v2.fixtures import operational_options
+        original = fixture_records("order-pull-forward-v2")
+        shipment = original["read_shipment"]
+        split = shipment.options[1]
+        for change in ({"quantity": 239}, {"transit_minutes": 500}):
+            records = dict(original)
+            changed = split.model_copy(update={"legs": (
+                split.legs[0], split.legs[1].model_copy(update=change),
+            )})
+            records["read_shipment"] = shipment.model_copy(update={"options": (shipment.options[0], changed)})
+            options = operational_options(records)
+            self.assertFalse(options["split-standard"]["checks"]["delivery_window"])
+            self.assertTrue(all(options["full-early"]["checks"].values()))
+        records = dict(original)
+        records["read_inventory"] = original["read_inventory"].model_copy(update={"materials_reserved_other_orders": 0})
+        self.assertTrue(all(not option["checks"]["other_order_impact"] for option in operational_options(records).values()))
+        records = dict(original)
+        early = split.legs[1].model_copy(update={
+            "pickup_at": "2026-10-16T08:00:00-05:00", "booking_cutoff": "2026-10-16T07:00:00-05:00",
+            "window_start": "2026-10-16T12:00:00-05:00",
+        })
+        records["read_shipment"] = shipment.model_copy(update={"options": (
+            shipment.options[0], split.model_copy(update={"legs": (split.legs[0], early)}),
+        )})
+        self.assertFalse(operational_options(records)["split-standard"]["checks"]["delivery_window"])
+
+    async def test_missing_option_gets_business_review_and_unknown_option_fails_without_repair(self):
+        for selected in (None, "invented-option"):
+            service, base = MockFoundry(), MockFoundry()
+            def alter(request, body):
+                response = base(request)
+                if request.url.path.endswith("/chat/completions"):
+                    data = json.loads(next(m["content"] for m in body["messages"] if m["role"] == "user"))
+                    if data["actor"] == "coordinator":
+                        payload = response.json()
+                        output = json.loads(payload["choices"][0]["message"]["content"])
+                        output["selected_option_id"] = selected
+                        payload["choices"][0]["message"]["content"] = json.dumps(output)
+                        return httpx.Response(200, json=payload)
+                return response
+            service.override = alter
+            if selected is None:
+                runtime, state, workflow, events = await self.first_run("production-resequence-v2", service)
+                self.assertTrue(any(event.type == "request_info" for event in events))
+                self.assertTrue(any("Planning choice unresolved" in reason for reason in review_reasons(state)))
+                self.assertEqual(runtime.budget.counts, {"gpt": 7, "decision": 3})
+            else:
+                with self.assertRaisesRegex(DemoError, "absent from canonical evidence"):
+                    await self.first_run("production-resequence-v2", service)
+                self.assertEqual(self.runtime.budget.counts, {"gpt": 7, "decision": 2})
+
+    async def test_model_inputs_have_neutral_options_not_expected_routes_or_preselected_reference_fields(self):
+        for scenario in self.scenarios[1:]:
+            runtime, state, workflow, events = await self.first_run(scenario)
+            for request, body in self.service.requests:
+                if not request.url.path.endswith("systemone"):
+                    context = json.loads(next(m["content"] for m in body["messages"] if m["role"] == "user"))
+                    self.assertIn("planner authority $2,500", context["original_issue"]["text"])
+                    continue
+                context = body["state"]
+                self.assertIn("planner authority $2,500", context["original_issue"])
+                serialized = json.dumps(context)
+                self.assertNotIn("expected_specialist", serialized)
+                self.assertNotIn("Expected specialist route", serialized)
+                self.assertNotIn("preferred_option", serialized)
+                self.assertIn("options", context["fixture"]["read_build"])
+                self.assertNotIn("cell", context["fixture"]["read_build"])
+                self.assertNotIn("pickup_at", context["fixture"]["read_shipment"])
+            payload = next(body for request, body in self.service.requests
+                           if "production_needed" in body.get("questions", {}))
+            self.assertEqual(len(payload["state"]["routing_context"]["unselected_options"]), 2)
+            for actor in AGENTS:
+                self.assertEqual(self.runtime.budget.tools[(actor, 0)], set(ALLOWLIST[actor]))
+            build_id = fixture_records(scenario)["read_build"].evidence_id
+            self.assertIn("options", state.evidence[build_id])
+            self.assertNotIn("cell", state.evidence[build_id])
+
+    async def test_discarded_option_dependencies_and_approvals_do_not_contaminate_selected_plan(self):
+        runtime, state, workflow, events = await self.first_run("order-pull-forward-v2")
+        state.findings["supply-chain"] = state.findings["supply-chain"].model_copy(update={
+            "selected_option_id": "full-early", "uses_expedited_freight": True,
+            "uses_alternative_carrier": True, "approval_requests": ["freight_authority"],
+        })
+        # Selected split plan still cites the discarded recommendation, but does not inherit its freight.
+        from decision_v2.contracts import validate_proposal
+        validate_proposal(state.proposal, state)
+        same = state.findings["supply-chain"].model_copy(update={"selected_option_id": "split-standard"})
+        state.findings["supply-chain"] = same
+        with self.assertRaisesRegex(DemoError, "omitted"):
+            validate_proposal(state.proposal, state)
+
+    async def test_canonical_selected_option_disagreements_block_positive_validation(self):
+        runtime, state, workflow, events = await self.first_run("order-pull-forward-v2")
+        state.proposal = state.proposal.model_copy(update={
+            "requires_overtime": True, "uses_expedited_freight": True, "uses_alternative_carrier": True,
+        })
+        reasons = review_reasons(state)
+        self.assertTrue(any("Selected-option contradiction" in reason and "requires_overtime" in reason for reason in reasons))
+        self.assertTrue(any("uses_expedited_freight" in reason for reason in reasons))
+        self.assertTrue(any("uses_alternative_carrier" in reason for reason in reasons))
+
+    def test_over_budget_alternatives_cannot_bypass_overall_assessment_guard(self):
+        from decision_v2.fixtures import assessment_blockers
+        records = dict(fixture_records("order-pull-forward-v2"))
+        shipment = records["read_shipment"]
+        records["read_shipment"] = shipment.model_copy(update={"options": tuple(
+            option.model_copy(update={"legs": tuple(
+                leg.model_copy(update={"freight_cost_usd": 2600}) for leg in option.legs
+            )}) for option in shipment.options
+        )})
+        with patch("decision_v2.fixtures.fixture_records", return_value=records):
+            self.assertIn("Carrier/freight authority requires owner review.", assessment_blockers("order-pull-forward-v2"))
+
+    async def test_discarded_option_still_preserves_global_containment_and_notification(self):
+        from decision_v2.contracts import validate_proposal
+        runtime, state, workflow, events = await self.first_run("order-pull-forward-v2")
+        state.findings["supply-chain"] = state.findings["supply-chain"].model_copy(update={
+            "selected_option_id": "full-early", "containment_required": True,
+            "approval_requests": ["customer_notification"],
+        })
+        with self.assertRaisesRegex(DemoError, "containment_required"):
+            validate_proposal(state.proposal, state)
+        state.proposal = state.proposal.model_copy(update={"containment_required": True})
+        with self.assertRaisesRegex(DemoError, "approval_requests"):
+            validate_proposal(state.proposal, state)
+
+    async def test_malformed_specialist_option_is_explicit_failure_without_repair(self):
+        service, base = MockFoundry(), MockFoundry()
+        def malformed(request, body):
+            response = base(request)
+            if request.url.path.endswith("/chat/completions"):
+                payload = response.json()
+                message = payload["choices"][0]["message"]
+                if message.get("content"):
+                    output = json.loads(message["content"])
+                    output["selected_option_id"] = 99
+                    message["content"] = json.dumps(output)
+                    return httpx.Response(200, json=payload)
+            return response
+        service.override = malformed
+        with self.assertRaisesRegex(DemoError, "structured-output failure; no retry"):
+            await self.first_run("production-resequence-v2", service)
+        self.assertEqual(self.runtime.budget.counts, {"gpt": 2, "decision": 2})
+
     def test_independent_immutable_records_and_canonical_arithmetic(self):
         ids = set()
         for scenario in self.scenarios:
@@ -869,7 +1094,7 @@ class ScenarioTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((pull["available_material_units"], pull["production_minutes"], pull["available_cell_minutes"]),
                          (400, 150, 180))
         self.assertEqual(pull["ready_at"], "2026-10-15T18:00:00-05:00")
-        self.assertEqual(pull["arrival_at"], "2026-10-16T10:00:00-05:00")
+        self.assertEqual(pull["arrival_at"], "2026-10-16T09:30:00-05:00")
 
     async def test_all_three_supported_cases_use_real_tools_and_complete_without_human_request(self):
         for scenario in self.scenarios:
@@ -999,6 +1224,8 @@ class ScenarioTests(unittest.IsolatedAsyncioTestCase):
                 if name == "cell":
                     records["read_build"] = records["read_build"].model_copy(update={
                         "cell": records["read_build"].cell.model_copy(update=change),
+                        "options": tuple(option.model_copy(update={"cell": option.cell.model_copy(update=change)})
+                                         for option in records["read_build"].options),
                     })
                 else:
                     records[name] = records[name].model_copy(update=change)
@@ -1391,6 +1618,9 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         build = records["read_build"]
         records["read_build"] = build.model_copy(update={
             "cell": build.cell.model_copy(update={"qualification_reference": None}),
+            "options": tuple(option.model_copy(update={
+                "cell": option.cell.model_copy(update={"qualification_reference": None}),
+            }) for option in build.options),
         })
         runtime = self.make_runtime(scenario_id="production-resequence-v2")
         with patch("decision_v2.fixtures.fixture_records", return_value=records), \

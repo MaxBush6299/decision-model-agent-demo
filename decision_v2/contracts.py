@@ -146,6 +146,7 @@ class PlanDependencies(StrictModel):
 class ExpertFinding(PlanDependencies):
     agent_id: AgentId
     revision: Literal[0, 1]
+    selected_option_id: Annotated[str, Field(min_length=1, max_length=64)] | None = None
     assessment: Annotated[str, Field(min_length=1, max_length=500)]
     implication: Annotated[str, Field(min_length=1, max_length=500)]
     recommended_action: Action
@@ -166,6 +167,7 @@ class ExpertFinding(PlanDependencies):
 
 class CoordinatedProposal(PlanDependencies):
     revision: Literal[0, 1]
+    selected_option_id: Annotated[str, Field(min_length=1, max_length=64)] | None = None
     recommended_action: Action
     uses_held_stock: bool
     uses_expedited_freight: bool
@@ -297,16 +299,23 @@ def validate_proposal(proposal: CoordinatedProposal, state: RunState) -> None:
         raise DemoError("Coordinator omitted or duplicated a participating finding.")
     validate_references(proposal, set(state.evidence))
     findings = [state.findings[a] for a in state.active]
+    applicable = [f for f in findings if proposal.selected_option_id is None
+                  or f.selected_option_id in (None, proposal.selected_option_id)]
     if proposal.uses_held_stock or (state.scenario_id == SCENARIO_ID and not proposal.containment_required):
         raise DemoError("Coordinator cannot release held stock or omit shipped-lot containment.")
     for field_name in (
         "containment_required", "uses_expedited_freight", "changes_customer_commitment",
         *PlanDependencies.model_fields,
     ):
-        if any(getattr(f, field_name) for f in findings) and not getattr(proposal, field_name):
+        relevant = findings if field_name == "containment_required" else applicable
+        if any(getattr(f, field_name) for f in relevant) and not getattr(proposal, field_name):
             raise DemoError(f"Coordinator omitted a material {field_name} requirement.")
     for field_name in ("unknown_keys", "approval_requests"):
-        required = {v for f in findings for v in getattr(f, field_name)}
+        relevant = findings if field_name == "unknown_keys" else applicable
+        required = {v for f in relevant for v in getattr(f, field_name)}
+        if field_name == "approval_requests":
+            required.update(v for f in findings for v in f.approval_requests
+                            if v in ("quality_containment", "customer_notification"))
         if not required.issubset(getattr(proposal, field_name)):
             raise DemoError(f"Coordinator omitted unresolved {field_name}.")
     conflicts = {c.model_dump_json() for f in findings for c in f.conflicts}
