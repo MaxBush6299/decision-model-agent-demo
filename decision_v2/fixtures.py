@@ -262,6 +262,18 @@ def initial_evidence(scenario_id: ScenarioId = SCENARIO_ID) -> dict[str, dict]:
     return {identifier: {"evidence_id": identifier, "source": "synthetic_issue", "text": issue_text(scenario_id)}}
 
 
+def assessment_blockers(scenario_id: ScenarioId) -> list[str]:
+    records = fixture_records(scenario_id)
+    missing = sorted(set().union(*(domain_unknowns(actor, scenario_id) for actor in ALLOWLIST)))
+    reasons = ["Missing canonical evidence: " + ", ".join(missing)] if missing else []
+    shipment, policy = records["read_shipment"], records["read_approval_policy"]
+    if scenario_id == SCENARIO_ID:
+        reasons.append("Quality containment and responsible customer notification remain required.")
+    elif shipment.freight_cost_usd > policy.planner_limit_usd or not shipment.approved_carrier:
+        reasons.append("Carrier/freight authority requires owner review.")
+    return reasons
+
+
 def policy_requirements(proposal: CoordinatedProposal, records, customer_changed=False) -> list[str]:
     if records["read_inventory"].scenario_id != SCENARIO_ID:
         return operational_policy(proposal, records)

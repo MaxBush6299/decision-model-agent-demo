@@ -9,9 +9,23 @@ from .contracts import (
     AGENTS, AFFECTED, SCENARIO_ID, ClarificationRequest, DemoError, FinalResult, HumanEvidence,
     HumanResponse, RunState, affected_agents,
 )
-from .fixtures import fixture_records, policy_requirements, validate_delivery_change
+from .fixtures import assessment_blockers, fixture_records, policy_requirements, validate_delivery_change
 from .presentation import Presenter
 from .runtime import Budget, DecisionClient
+
+
+class AssessmentExecutor(Executor):
+    def __init__(self, decision, presenter):
+        super().__init__(id="assessment")
+        self.decision, self.presenter = decision, presenter
+
+    @handler
+    async def assess_need(self, state: RunState, ctx: WorkflowContext[RunState]):
+        state.assessment = await self.decision.assess_need(state)
+        blockers = assessment_blockers(state.scenario_id)
+        state.assessment_required = state.assessment.effective != "no_further_assessment" or bool(blockers)
+        self.presenter.assessment(state.assessment, state.assessment_required, blockers)
+        await ctx.send_message(state)
 
 
 class SelectionExecutor(Executor):
@@ -29,9 +43,13 @@ class SelectionExecutor(Executor):
                 state.active.append(actor)
             elif answer.effective == "cannot_determine":
                 state.uncertain.append(actor)
+                state.active.append(actor)
             else:
                 self.presenter.diagnostic(f"Skipped specialist: {actor}")
         state.refresh = list(state.active)
+        if not state.active:
+            self.presenter.line("No specialist selected confidently; Coordinator will assess canonical "
+                                "evidence directly. This is not a no-assessment disposition.")
         await ctx.send_message(state)
 
 
@@ -85,8 +103,6 @@ class ValidationExecutor(Executor):
 
 def review_reasons(state: RunState) -> list[str]:
     reasons = []
-    if state.uncertain:
-        reasons.append("Selection uncertainty: " + ", ".join(state.uncertain))
     if state.validation and (
         state.validation.selected != "Addresses the issue" or not state.validation.satisfactory
     ):
@@ -112,8 +128,8 @@ class ReviewExecutor(Executor):
     async def review(self, state: RunState, ctx: WorkflowContext[RunState, FinalResult]):
         self.budget.remaining()
         reasons = review_reasons(state)
-        if not state.active and not state.uncertain:
-            await ctx.yield_output(FinalResult("handoff", 2, ("No specialist selected; human ownership needed.",), None))
+        if not state.assessment_required:
+            await ctx.yield_output(FinalResult("no_further_assessment", 0, (), None))
             return
         if not reasons:
             if state.proposal is None or state.validation is None:
@@ -126,11 +142,9 @@ class ReviewExecutor(Executor):
         allowed = set()
         if state.scenario_id == SCENARIO_ID:
             allowed = set(state.proposal.unknown_keys if state.proposal else ()) & set(AFFECTED)
-            for actor in state.uncertain:
-                allowed.update(k for k, actors in AFFECTED.items() if actor in actors)
         request = ClarificationRequest(
             revision=state.revision, allowed_keys=tuple(sorted(allowed)),
-            uncertain_agents=tuple(state.uncertain), reasons=tuple(reasons),
+            uncertain_agents=(), reasons=tuple(reasons),
             proposal=state.proposal, request_id="clarify-" + uuid4().hex,
             scenario_id=state.scenario_id,
         )
@@ -194,14 +208,17 @@ class ReviewExecutor(Executor):
 def build_workflow(team: ExpertTeam, decision: DecisionClient, budget: Budget, trace, *, presenter=None):
     presenter = presenter or Presenter(trace, scenario_id=team.runtime.scenario_id)
     budget.trace = presenter.diagnostic
+    assessment = AssessmentExecutor(decision, presenter)
     select = SelectionExecutor(decision, presenter)
     experts = ExpertsExecutor(team, presenter)
     coordinator = CoordinatorExecutor(team, presenter)
     validate = ValidationExecutor(decision, presenter)
     review = ReviewExecutor(budget, presenter)
-    builder = WorkflowBuilder(start_executor=select, max_iterations=12, output_from=[review])
-    builder.add_edge(select, experts, condition=lambda state: bool(state.active) and not state.uncertain)
-    builder.add_edge(select, review, condition=lambda state: not state.active or bool(state.uncertain))
+    builder = WorkflowBuilder(start_executor=assessment, max_iterations=12, output_from=[review])
+    builder.add_edge(assessment, select, condition=lambda state: state.assessment_required)
+    builder.add_edge(assessment, review, condition=lambda state: not state.assessment_required)
+    builder.add_edge(select, experts, condition=lambda state: bool(state.active))
+    builder.add_edge(select, coordinator, condition=lambda state: not state.active)
     builder.add_edge(experts, coordinator)
     builder.add_edge(coordinator, validate)
     builder.add_edge(validate, review)

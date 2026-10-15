@@ -109,14 +109,17 @@ async def read_terminal(request: ClarificationRequest) -> HumanResponse | None:
     if can_record:
         terminal_trace("1. Record customer response after contact: customer will move the second delivery.")
     else:
-        terminal_trace("This pause needs responsible-owner evidence; a customer-window update is not requested.")
+        terminal_trace("1. Leave review pending for responsible-owner evidence.")
     terminal_trace("2. Reject the recommendation and request leadership escalation." if can_record else
                    "2. Request leadership escalation for unresolved review.")
-    choice = await read_terminal_line("Choose 1 or 2: " if can_record else "Choose 2: ")
+    choice = await read_terminal_line("Choose 1 or 2: ")
     if choice is None:
         return None
     if choice.lower() in ("2", "reject", "escalate"):
         return HumanResponse(kind="escalate")
+    if not can_record and choice.lower() in ("1", "pending"):
+        terminal_trace("Review remains pending; no action or further inference performed.")
+        return None
     if choice != "1" or not can_record:
         terminal_trace("ERROR: invalid review choice; review pending, no reprompt.")
         return None
@@ -220,7 +223,7 @@ async def run_demo(runtime: AzureRuntime, response_reader=read_terminal, trace=t
 
 async def live_run(config, verbose=False, scenario_id=SCENARIO_ID):
     terminal_trace("LIVE Azure Foundry inference | SYNTHETIC fixture tools | proposals only")
-    terminal_trace("At most one clarification; hard maximum 20 GPT +3 Decision-1 attempts, not expected runtime.")
+    terminal_trace("At most one clarification; hard maximum 20 GPT +4 Decision-1 attempts, not expected runtime.")
     budget = Budget(terminal_trace)
     runtime = AzureRuntime(config, budget, scenario_id=scenario_id)
     try:

@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 AGENTS = ("supply-chain", "production", "commercial")
 SELECTION_OPTIONS = ("needed", "not_needed", "cannot_determine")
+ASSESSMENT_OPTIONS = ("assessment_needed", "no_further_assessment", "cannot_determine")
 VALIDATION_OPTIONS = ("Addresses the issue", "Needs revision", "Cannot determine")
 SCENARIO_ID = "quality-hold-v2"
 ScenarioId = Literal["quality-hold-v2", "carrier-delay-v2", "production-resequence-v2", "order-pull-forward-v2"]
@@ -73,7 +74,7 @@ class ChoiceAnswer(StrictModel):
     @model_validator(mode="after")
     def check_distribution(self):
         keys = set(self.probabilities)
-        if keys not in (set(SELECTION_OPTIONS), set(VALIDATION_OPTIONS)):
+        if keys not in (set(SELECTION_OPTIONS), set(VALIDATION_OPTIONS), set(ASSESSMENT_OPTIONS)):
             raise ValueError("Complete known option distribution required.")
         if self.selected not in keys or not math.isclose(
             sum(self.probabilities.values()), 1, abs_tol=.001,
@@ -268,6 +269,8 @@ class RunState:
     continuation_used: bool = False
     refresh: list[str] = field(default_factory=list)
     scenario_id: ScenarioId = SCENARIO_ID
+    assessment: ChoiceAnswer | None = None
+    assessment_required: bool = True
 
 
 def affected_agents(response: HumanResponse, active: list[str], uncertain: list[str]) -> list[str]:

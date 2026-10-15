@@ -145,6 +145,22 @@ class Presenter:
                 self.line("Unsupported evidence: " + self.labels[key])
         self.line("Synthetic read-only planning records; no real shipment, production or customer writes.")
 
+    def assessment(self, answer, required, blockers):
+        self.section("ASSESSMENT NEED")
+        self.choice("Decision-1 overall assessment need", answer)
+        if not answer.satisfactory or answer.selected == "cannot_determine":
+            self.line("Host routing: conservatively assess; overall necessity is uncertain, not a business verdict.")
+        elif blockers and answer.selected == "no_further_assessment":
+            self.line("Host routing: assess despite model's no; canonical requirements cannot be bypassed.")
+        for blocker in blockers:
+            if blocker.startswith("Missing canonical evidence: "):
+                keys = blocker.removeprefix("Missing canonical evidence: ").split(", ")
+                self.line("Missing canonical evidence: " + "; ".join(self.labels[key] for key in keys))
+            else:
+                self.line(blocker)
+        self.line("Next: select contributing specialists." if required else
+                  "No further assessment recommended; no expert proposal or proposal validation was performed.")
+
     def choice(self, label, answer, selection=False):
         if selection:
             self.section("TEAM")
@@ -156,11 +172,11 @@ class Presenter:
                   f"{answer.probabilities[answer.selected]:.1%} | model-reported confidence {confidence}.")
         if selection:
             routing = {"needed": "consult specialist", "not_needed": "skip specialist",
-                       "cannot_determine": "uncertain"}[answer.effective]
+                       "cannot_determine": "conservative consultation (uncertain role score)"}[answer.effective]
             self.line(f"  Routing outcome: {routing}.")
             if not answer.satisfactory:
-                self.line("  Requires chosen-option probability at least 70% and a uniquely highest "
-                          "selected option; reported confidence is separate.")
+                self.line("  Model choice did not meet the 70%/uniquely-highest policy; host consults "
+                          "conservatively. Reported confidence is separate.")
         if self.verbose:
             self.output("[diagnostic] complete option probabilities (not confidence): " +
                         json.dumps(answer.probabilities))
@@ -203,13 +219,7 @@ class Presenter:
     def review(self, state, reasons, request):
         if state.proposal is None:
             self.section("INITIAL PLAN")
-            if state.uncertain:
-                self.line("Routing decision unresolved: " + ", ".join(a.title() for a in state.uncertain) + ".")
-                self.line("No specialist assessment or proposal validation has run.")
-                self.line("This is uncertainty about selecting or skipping expertise, "
-                          "not a finding that stock, capacity or approvals are missing.")
-            else:
-                self.line("No specialists selected; there is no assessed business plan.")
+            self.line("No assessed proposal is available; this is not a validated plan.")
         if state.policies:
             self.line("Required owner handoffs: " + "; ".join(self.labels[k] for k in state.policies))
         self.section("HUMAN CLARIFICATION")
@@ -231,9 +241,6 @@ class Presenter:
         if self.scenario_id == SCENARIO_ID:
             self.line("Planning update only; quality release, containment and required approvals remain separate.")
         else:
-            if state.uncertain and state.proposal is None:
-                self.line("Current routing policy pauses the whole team before dispatch. "
-                          "Business input cannot override an uncertain routing decision.")
             self.line("Responsible-owner review is required; this case has no supported terminal evidence update.")
             for reason in reasons:
                 if not reason.startswith(("Unknown domain evidence:", "Mandatory approval handoff:")):
@@ -274,6 +281,9 @@ class Presenter:
             self.line("Quality retains the held lot and owns shipped-suspect containment/disposition. "
                       "Delivery relief never closes the quality incident.")
         else:
+            if result.status == "no_further_assessment":
+                self.line("No further assessment recommended from canonical facts. "
+                          "No expert proposal, proposal validation or execution occurred.")
             if result.status == "advisory_complete":
                 self.line("Plan ready for responsible-owner execution review; model validation is not execution "
                           "or safety certification.")
@@ -282,4 +292,4 @@ class Presenter:
 
     def attempts(self, budget):
         self.line(f"Actual model attempts: GPT {budget.counts['gpt']}/20; Decision-1 "
-                  f"{budget.counts['decision']}/3; fixture tools {sum(map(len, budget.tools.values()))}/12.")
+                  f"{budget.counts['decision']}/4; fixture tools {sum(map(len, budget.tools.values()))}/12.")

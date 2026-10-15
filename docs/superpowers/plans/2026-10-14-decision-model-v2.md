@@ -26,11 +26,15 @@ HTTPX2 2.13.1 fake transports (OpenAI SDK 3.26.0) for offline integration tests.
 
 - Approved specification: `docs\superpowers\specs\2026-10-14-decision-model-v2-design.md`, commit `a6036a3`.
 - Leave v1 CLI/tests/requirements/contracts, site, and GitHub Actions untouched.
-- No model inference, push/merge/publication, resource/access changes, or plant writes.
+- No push/merge/publication, resource/access changes, or plant writes.
+  User15 October exception: four initial live cases plus at most two corrective
+  runs against the existing deployments only. All six were used; no further run
+  is authorized by that bounded permission.
 - At most three specialists and one Coordinator; one initial assessment and one continuation.
-- <=20 GPT, <=3 Decision-1, <=23 total attempts; failed attempts count; no retries.
+- <=20 GPT, <=4 Decision-1, <=24 total attempts; failed attempts count; no retries.
 - <=3 GPT attempts and <=2 unique successful tool executions per specialist invocation.
-- Sequential specialists; rolling 60-second limits: 10 GPT and 20 Decision-1.
+- Sequential specialists; rolling60s limits10 GPT/20 Decision-1 plus conservative
+  local10,000-token GPT estimate, as observed in the existing deployment.
 - Deadlines: request 60s, credential 15s, tool 2s, active 900s, human 300s, wall 1200s.
 - Human assertions never change immutable facts, approvals, tools, rubric, or budgets.
 
@@ -300,3 +304,45 @@ vectors were not provided and were not invented as observed evidence.
 No live inference, push/merge or auth/budget/dependency/cloud/site change.
 Consulting routing-uncertain specialists instead of pausing remains a separate
 user decision, not an implemented fix.
+
+## User-directed two-stage routing and bounded live validation (15 October)
+
+Supersedes the previous routing gate following explicit user approval:
+"it should first decide if it needs further assesment, if yes it decides which
+specialists, if no it goes straight through."
+
+- [x] Add independent typed overall assessment decision and canonical guarded
+  direct no-assessment disposition; distinguish this from a validated plan.
+- [x] Add second role-relevance decision; conservatively consult weak/uncertain
+  roles instead of escalating routing questions. Overall uncertainty assesses.
+  All confidently skipped roles use canonical Coordinator-only assessment,
+  citations/unknown guards and ordinary proposal validation/policy.
+- [x] Preserve three-role/one-resume/read-only/Foundry-only boundaries. Increase
+  D1 ceiling3->4 and total23->24; GPT20/tools12/deadlines unchanged. Generic
+  business review offers pending or escalation, not a lone "choose2".
+- [x] Run four authorized live cases, then two permitted corrective quality
+  runs. Fix concrete truncation with concise output guidance, not more output
+  tokens/repair calls. Inspect existing deployment read-only:10GPT RPM and10k
+  GPT TPM. Add conservative local TPM pacing and explicit429 reporting; no
+  cloud quota/deployment change or automatic retry.
+- [x] Critically review live numbers, source citations, flags and handoffs.
+  Healthy cases each chose direct no-assessment. Last quality run completed
+  one simulated human continuation,12GPT+4D1,10 tools,377.6s, unresolved handoff.
+  Earlier quality attempts stopped on malformed/truncated output and token429.
+  No stock, shipment, customer or spending action performed.
+- [x] Add explicit derived provisional-window context after observing stale
+  refreshed prose. Offline coverage confirms baseline240/provisional0 and
+  Saturday08:00 without changing canonical Friday schedule or stock. This
+  final grounding/notification wording change was not rerun live: all six
+  authorized runs are exhausted, and model prose reliability is not calibrated.
+
+Complete sanitized wire/trace/metadata files remain in private session storage.
+Public startup guidance records outcomes/limitations without provider IDs/host.
+Local commit only; no push/merge, v1/site/dependency/auth/cloud changes.
+
+Final offline verification:128 tests (34 unchanged v1,94 v2) pass, including
+actual framework two-stage/direct/conservative/all-skip/quality-policy branches,
+the reported carrier scores, no retries and revised caps, token pacing, generic
+pending/escalation and provisional-window context. CLI help, pip consistency
+and diff checks pass. Live test ceiling respected: four initial plus two
+corrective runs, with complete private captures and explicit failed-run results.

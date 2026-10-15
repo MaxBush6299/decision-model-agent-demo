@@ -12,6 +12,12 @@ On the same date the user requested "Lets do all 3": add `carrier-delay`,
 its supply-chain alias. These additions use the same bounded architecture;
 they do not script live model selections, recommendations or validation.
 
+On15 October the user approved two-stage routing and bounded live validation:
+first decide overall assessment need; only when needed select contributing
+specialists. Uncertain routing now conservatively assesses, never asks humans
+to settle role relevance. This supersedes the earlier routing gate and raises
+only Decision-1/total attempt ceilings to4/24 (GPT remains20).
+
 ## Additional approved synthetic cases
 
 Same Thursday14:00 snapshot, part MB-217 and fictional Tier-1 context:
@@ -45,11 +51,11 @@ supplied policy citation fail. Specialists retain executed-tool-only citation
 guards. This is canonical data supply, not a fake tool call or extra inference.
 
 Existing no-review branch is retained, not replaced by a scripted verdict:
-at least one needed specialist, complete cited join/proposal, effectively
-positive Decision-1 validation, no selection uncertainty/unknowns/conflicts
+complete cited join/proposal or canonical Coordinator-only assessment, effectively
+positive Decision-1 validation, no business unknowns/conflicts
 or approval handoffs. Output is advisory_complete / plan ready for responsible
 owners, not executed, accepted by a customer, or safety-certified. All-three
-batched-read illustrative initial path is7 GPT+2 Decision-1, not a live promise.
+batched-read illustrative initial path is7 GPT+3 Decision-1, not a live promise.
 
 Host canonical checks reconcile material/finished-stock demand, setup/rate/
 staffed minutes, reservations, qualification, ready/pickup/cutoff/arrival/window,
@@ -65,17 +71,11 @@ or actual contact. The existing customer-window clarification is quality-only;
 it cannot resolve generic missing carrier, qualification, capacity or approval
 evidence. Quality's single affected-role continuation and all budgets remain.
 
-The carrier routing investigation preserves the existing70%/unique-highest
-selected-option gate and pause-before-dispatch on any uncertain role. A weak
-not_needed is uncertain, not permission to skip. Model confidence is separate
-from option probability and is not used as a routing threshold. Generic
-selection now receives a derived canonical position/check/applicability summary
-in addition to all four records, distinguishing nonapplicable fields from
-missing evidence without assigning roles. Its criteria distinguish distinct
-role actions/dependencies/unresolved questions from established facts. Terminal
-output separates raw choice/probability from effective routing and identifies
-pre-dispatch uncertainty as routing, not a business-plan failure. No live-score
-improvement is promised; uncertain-to-consult routing requires separate approval.
+The carrier investigation found all records were already supplied. Generic
+selection retains a derived canonical position/check/applicability summary
+to distinguish nonapplicable fields from missing evidence without assigning
+roles. Role actions/dependencies may need assessment even with complete facts.
+Raw choice/probability remains distinct from effective host routing.
 
 ## User-directed synthetic case
 
@@ -171,17 +171,31 @@ unknowns, distinct from approval authority and selection uncertainty.
 
 ## Selection, policy and one clarification
 
-Unchanged independent Decision-1 supply_chain_needed/production_needed/
-commercial_needed questions. Complete finite option distributions summing
-to1 within.001; >=.70 and uniquely highest for effective needed/not-needed
-or satisfactory positive validation. Explicit cannot_determine, low or tied
-scores pause; malformed responses fail explicitly. Probability versus
+First Decision-1 assessment_needed question has typed options assessment_needed,
+no_further_assessment, cannot_determine. A >=.70 uniquely highest no permits
+direct no_further_assessment/exit0, with no expert proposal/validation/execution.
+Canonical critical missing facts, Quality containment/notification and concrete
+freight/carrier authority block that shortcut; conservatively assess instead.
+An uncertain/weak/tied overall result also proceeds to assessment, explicitly
+labeled a host routing choice, never a successful no.
+
+Then independent supply_chain_needed/production_needed/commercial_needed
+questions select materially contributing roles. >=.70 uniquely highest needed
+consults; not_needed skips. Explicit cannot_determine, low or tied role scores
+consult that specialist conservatively, preserving raw results and the three-role
+cap. They do not generate human routing questions or business review reasons.
+If all roles are confidently skipped despite overall yes, the Coordinator alone
+assesses supplied canonical records with empty finding refs, then normal
+validation/policy. It must cite canonical records and preserve canonical unknowns.
+Complete finite option distributions sum to1 within.001; malformed responses
+fail explicitly. Positive proposal validation still requires >=.70 and uniquely
+highest. Probability versus
 model-reported confidence stay separate. The.70 policy is illustrative, not
 calibrated quality, compliance or safety assurance.
 
-Uncertain selection pauses before GPT, retaining confirmed-needed roles.
-All not-needed ->handoff. Otherwise experts ->complete join ->Coordinator
-->Decision-1 validation against original issue, canonical records, findings,
+After overall yes/uncertainty, consult needed and uncertain roles. All confidently
+not-needed ->canonical Coordinator-only assessment. Otherwise experts
+->complete join ->Coordinator ->Decision-1 validation against original issue, canonical records, findings,
 overlays and actual proposal. Host checks policy independently. Do not script
 particular live selections, recommendations or validation verdicts.
 
@@ -211,9 +225,16 @@ No raw JSON input, approve/release action, reprompt or additional question loop.
 Record `HumanEvidence {evidence_id,key,value,source=human_clarification,
 request_id,revision=1}`. Reference/text is untrusted, never authority.
 Deterministic map refreshes Production+Commercial, reuses Supply-chain.
-Initial selection uncertainty activates mapped roles union confirmed-needed
-roles, preserves unrelated uncertainty and never invents improved scores.
+Raw selection uncertainty remains recorded for provenance, not as an unresolved
+business reason after consultation. No improved routing scores are invented.
 Coordinator/validation repeat once; then final handoff, no second request.
+
+Refreshed quality agents receive a derived planning_update with original and
+provisional gap, moved quantity/window and unchanged released stock, explicitly
+unverified human evidence with no authority. Canonical schedule remains immutable.
+Responsible notification is separate from disposition/recovery; shipped exposure
+is not misrepresented as onsite held inventory. These post-smoke grounding
+improvements are offline-verified, not live-retested within the exhausted cap.
 
 The illustrative240 move yields provisional original-window shortfall240->0,
 not180->420 usable stock. First180 Friday10:00 unchanged; later240 still
@@ -236,14 +257,18 @@ Render structured results directly; no extra model calls or cosmetic sleeps.
 
 Same caps: <=3 GPT attempts/2 unique tools/2 rounds per specialist invocation,
 >=1 successful tool; Coordinator<=1 GPT, no tools. Hard totals<=20 GPT,
-<=3 Decision-1,<=23 actual model attempts,<=12 tool executions. Failed attempts
+<=4 Decision-1,<=24 actual model attempts,<=12 tool executions. Failed attempts
 and tool-result turns count cumulatively across resume. Framework
 max_iterations=3/max_function_calls=2 supplemented with pre-dispatch guards
 because framework can force an additional final completion or process a batch.
-No retries/repair calls. Process-local rolling60s limits10 GPT/20 Decision-1.
-Other callers can cause429; stop without retry.
+No retries/repair calls. Local rolling60s limits10 GPT/20 Decision-1 plus a
+conservative10,000-GPT-token estimate per minute (UTF-8 request bytes/3 rounded
+up plus output allowance; schemas/tools included). This matches the read-only
+verified live deployment ceiling, not exact Azure token accounting. Oversized
+requests fail before dispatch. Other callers/service limits can still cause429;
+report explicitly and stop without retry. No quota/capacity changes.
 
-One batched tool round per selected specialist: all-three initial7 GPT+2 D1;
+One batched tool round per selected specialist: all-three initial7 GPT+3 D1;
 Production/Commercial refresh adds5 GPT+1 D1. These are illustrative normal
 paths, not guaranteed live counts or latency. Worst-case calls can take minutes.
 Request60s, credential15s, tool2s, active900s including quota/auth waits,
@@ -252,7 +277,10 @@ Non-TTY/EOF/interrupt/invalid/empty/expired input stays pending, no reprompt.
 Auth/HTTP/TLS/timeout/refusal/truncation/schema/citation/tool/join/budget
 failures stop explicitly, no partial-success fallback. Output<=1200 tokens per
 GPT attempt, storage disabled. Exit0 advisory or explicit reject/escalate;
-exit1 error; exit2 pending/handoff. No live inference authorized by this revision.
+exit1 error; exit2 pending/handoff. On15 October the user separately authorized
+four initial live cases plus at most two corrective runs; all six were used.
+See docs/v2.md for observed outcomes and limitations; this is not open-ended
+permission or calibrated performance evidence.
 
 ## Offline acceptance and grounding
 

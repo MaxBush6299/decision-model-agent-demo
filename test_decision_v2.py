@@ -223,6 +223,7 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
         budget = Budget()
         for actor, revision in (("selection", 0), ("validation", 0), ("validation", 1)):
             await budget.reserve("decision", actor, revision)
+        await budget.reserve("decision", "assessment", 0)
         with self.assertRaises(DemoError):
             await budget.reserve("decision", "other", 1)
         await budget.reserve("gpt", "coordinator", 0)
@@ -346,13 +347,14 @@ class MockFoundry:
                 "revision": data["revision"], "recommended_action": action,
                 "uses_held_stock": any(f["uses_held_stock"] for f in findings),
                 "uses_expedited_freight": any(f["uses_expedited_freight"] for f in findings),
-                "containment_required": all(f["containment_required"] for f in findings),
+                "containment_required": quality or any(f["containment_required"] for f in findings),
                 "changes_customer_commitment": any(f["changes_customer_commitment"] for f in findings),
                 "brief": ("Advisory: establish remaining evidence; no authority or actions granted." if quality else
                           "Advisory: the documented option preserves delivery windows, existing authority and other orders; no actions performed."),
                 "finding_refs": [{"agent_id": f["agent_id"], "revision": f["revision"]} for f in findings],
-                "evidence_ids": sorted({e for f in findings for e in f["evidence_ids"]}),
-                "unknown_keys": sorted({e for f in findings for e in f["unknown_keys"]}),
+                "evidence_ids": (sorted({e for f in findings for e in f["evidence_ids"]}) if findings else
+                                 [r["evidence_id"] for r in data["canonical_records"].values()]),
+                "unknown_keys": sorted({e for f in findings for e in f["unknown_keys"]} | set(data["required_unknown_keys"])),
                 "approval_requests": sorted({e for f in findings for e in f["approval_requests"]}),
                 "conflicts": [c for f in findings for c in f["conflicts"]],
             }
@@ -580,7 +582,7 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
     async def test_framework_resume_once_and_reuse_findings(self):
         runtime, team, workflow, state, events = await self.first_run()
         request = next(e for e in events if e.type == "request_info")
-        self.assertEqual(runtime.budget.counts, {"gpt": 7, "decision": 2})
+        self.assertEqual(runtime.budget.counts, {"gpt": 7, "decision": 3})
         self.assertEqual(request.request_id, request.data.request_id)
         original_supply = state.findings["supply-chain"]
         response = customer_response()
@@ -595,7 +597,7 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(state.findings["supply-chain"].revision, 0)
         self.assertEqual(state.findings["commercial"].revision, 1)
         self.assertIs(state.findings["supply-chain"], original_supply)
-        self.assertEqual(runtime.budget.counts, {"gpt": 12, "decision": 3})
+        self.assertEqual(runtime.budget.counts, {"gpt": 12, "decision": 4})
         self.assertNotIn("customer_delivery_change", state.findings["production"].unknown_keys)
         self.assertEqual(len(team.agents), 7)
         self.assertEqual(sum(map(len, runtime.budget.tools.values())), 10)
@@ -633,7 +635,7 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(state.findings["supply-chain"], supply)
         self.assertTrue(result.proposal.uses_expedited_freight)
         self.assertIn("freight_authority", state.policies)
-        self.assertEqual(runtime.budget.counts, {"gpt": 12, "decision": 3})
+        self.assertEqual(runtime.budget.counts, {"gpt": 12, "decision": 4})
 
     async def test_no_customer_agreement_keeps_original_gap_and_containment(self):
         runtime, team, workflow, state, events = await self.first_run()
@@ -647,18 +649,18 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("customer_notification", state.policies)
         self.assertNotIn("customer_commitment", state.policies)
 
-    async def test_unaffected_uncertain_selection_still_hands_off(self):
+    async def test_uncertain_selection_is_consulted_and_not_a_business_handoff_reason(self):
         service = MockFoundry({a.replace("-", "_") + "_needed": "cannot_determine" for a in AGENTS})
         runtime, team, workflow, state, events = await self.first_run(service)
         request = next(e for e in events if e.type == "request_info")
         resumed = [e async for e in workflow.run(stream=True, responses={
             request.request_id: customer_response(),
         })]
-        self.assertEqual(state.active, ["production", "commercial"])
+        self.assertEqual(state.active, list(AGENTS))
         self.assertEqual(state.uncertain, ["supply-chain"])
         result = next(e.data for e in resumed if e.type == "output")
         self.assertEqual(result.code, 2)
-        self.assertTrue(any("Selection uncertainty" in r for r in result.reasons))
+        self.assertFalse(any("Selection uncertainty" in r for r in result.reasons))
 
     async def test_one_and_two_expert_selection_skip_other_agents(self):
         for active in (["production"], ["supply-chain", "commercial"]):
@@ -685,7 +687,7 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.reasons)
         self.assertEqual(state.validation.selected, "Addresses the issue")
         self.assertEqual(delivery_position(state.overlays).provisional_gap, 0)
-        self.assertEqual(runtime.budget.counts, {"gpt": 8, "decision": 3})
+        self.assertEqual(runtime.budget.counts, {"gpt": 8, "decision": 4})
 
     async def test_refresh_cannot_erase_or_resolve_an_uncited_previous_unknown(self):
         for missing_citation in (False, True):
@@ -750,7 +752,7 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result.code, 2)
                 self.assertTrue(any("Validation unresolved" in r for r in result.reasons))
                 self.assertFalse(any(e.type == "request_info" for e in resumed))
-                self.assertEqual(runtime.budget.counts["decision"], 3)
+                self.assertEqual(runtime.budget.counts["decision"], 4)
 
     async def test_customer_reference_cannot_release_stock_or_grant_authority(self):
         runtime, team, workflow, state, events = await self.first_run()
@@ -777,31 +779,32 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(runtime.budget.counts, before)
 
 
-    async def test_initial_selection_uncertainty_pauses_before_agents(self):
+    async def test_initial_selection_uncertainty_consults_before_business_review(self):
         service = MockFoundry({
             "supply_chain_needed": "needed", "production_needed": "cannot_determine",
             "commercial_needed": "not_needed",
         })
         runtime, team, workflow, state, events = await self.first_run(service)
         request = next(e for e in events if e.type == "request_info")
-        self.assertFalse(team.agents)
-        self.assertEqual(runtime.budget.counts, {"decision": 1})
+        self.assertEqual(set(a for a, r in team.agents), {"supply-chain", "production", "coordinator"})
+        self.assertEqual(runtime.budget.counts, {"decision": 3, "gpt": 5})
+        self.assertEqual(request.data.uncertain_agents, ())
         resumed = [e async for e in workflow.run(stream=True, responses={
             request.request_id: customer_response(),
         })]
         self.assertEqual(state.active, ["supply-chain", "production", "commercial"])
         self.assertFalse(state.uncertain)
-        self.assertEqual(runtime.budget.counts, {"decision": 2, "gpt": 7})
+        self.assertEqual(runtime.budget.counts, {"decision": 4, "gpt": 10})
         self.assertFalse(any(e.type == "request_info" for e in resumed))
 
-    async def test_no_specialists_no_agents_or_human_loop(self):
+    async def test_no_specialists_still_assesses_quality_and_requests_business_evidence(self):
         service = MockFoundry({a.replace("-", "_") + "_needed": "not_needed" for a in AGENTS})
         runtime, team, workflow, state, events = await self.first_run(service)
-        result = next(e.data for e in events if e.type == "output")
-        self.assertEqual(result.code, 2)
-        self.assertFalse(team.agents)
-        self.assertFalse(any(e.type == "request_info" for e in events))
-        self.assertEqual(runtime.budget.counts, {"decision": 1})
+        request = next(e.data for e in events if e.type == "request_info")
+        self.assertIn("customer_delivery_change", request.allowed_keys)
+        self.assertEqual(set(team.agents), {("coordinator", 0)})
+        self.assertEqual(runtime.budget.counts, {"decision": 3, "gpt": 1})
+        self.assertIn("quality_containment", state.policies)
 
     async def test_reject_and_escalate_skip_continuation(self):
         for kind in ("reject", "escalate"):
@@ -812,7 +815,7 @@ class WorkflowTests(unittest.IsolatedAsyncioTestCase):
             })]
             result = next(e.data for e in resumed if e.type == "output")
             self.assertEqual(result.code, 0)
-            self.assertEqual(runtime.budget.counts, {"gpt": 7, "decision": 2})
+            self.assertEqual(runtime.budget.counts, {"gpt": 7, "decision": 3})
 
     async def test_customer_clarification_cannot_grant_authority(self):
         runtime, team, workflow, state, events = await self.first_run()
@@ -879,14 +882,14 @@ class ScenarioTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(state.policies, [])
                 self.assertEqual(state.proposal.unknown_keys, [])
                 self.assertFalse(state.proposal.containment_required)
-                self.assertEqual(runtime.budget.counts, {"gpt": 7, "decision": 2})
+                self.assertEqual(runtime.budget.counts, {"gpt": 7, "decision": 3})
                 self.assertEqual(set(state.evidence), {issue_id(scenario), *(
                     record.evidence_id for record in fixture_records(scenario).values()
                 )})
                 for actor in AGENTS:
                     self.assertEqual(runtime.budget.tools[(actor, 0)], set(ALLOWLIST[actor]))
                     self.assertTrue(set(state.findings[actor].evidence_ids).issubset(state.evidence))
-                selection = self.service.requests[0][1]
+                selection = self.service.requests[1][1]
                 self.assertEqual(set(selection["questions"]),
                                  {"supply_chain_needed", "production_needed", "commercial_needed"})
                 self.assertEqual(selection["state"]["scenario_id"], scenario)
@@ -914,7 +917,7 @@ class ScenarioTests(unittest.IsolatedAsyncioTestCase):
         service = MockFoundry({"supply_chain_needed": "not_needed", "commercial_needed": "not_needed"})
         runtime, state, workflow, events = await self.first_run("production-resequence-v2", service)
         self.assertEqual(state.active, ["production"])
-        self.assertEqual(runtime.budget.counts, {"gpt": 3, "decision": 2})
+        self.assertEqual(runtime.budget.counts, {"gpt": 3, "decision": 3})
         self.assertFalse(any(event.type == "request_info" for event in events))
         self.assertEqual(next(event.data.status for event in events if event.type == "output"), "advisory_complete")
 
@@ -939,7 +942,7 @@ class ScenarioTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(policy_id, state.proposal.evidence_ids)
         self.assertIn(policy_id, state.evidence)
         self.assertEqual(sum(map(len, runtime.budget.tools.values())), 2)
-        self.assertEqual(runtime.budget.counts, {"gpt": 3, "decision": 2})
+        self.assertEqual(runtime.budget.counts, {"gpt": 3, "decision": 3})
         self.assertFalse(any(event.type == "request_info" for event in events))
 
     async def test_negative_uncertain_and_low_probability_validation_pause_not_success(self):
@@ -967,21 +970,15 @@ class ScenarioTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(next(event.data.status for event in resumed if event.type == "output"), "escalated")
                 self.assertEqual(runtime.budget.counts, before)
 
-    async def test_selection_uncertainty_does_not_dispatch_or_offer_quality_menu(self):
+    async def test_selection_uncertainty_is_consulted_without_quality_menu(self):
         for scenario in self.scenarios:
             runtime, state, workflow, events = await self.first_run(
                 scenario, MockFoundry({"supply_chain_needed": "cannot_determine"}),
             )
-            request = next(event.data for event in events if event.type == "request_info")
-            self.assertEqual(request.allowed_keys, ())
-            self.assertEqual(runtime.budget.counts["gpt"], 0)
-            self.assertEqual(runtime.budget.counts["decision"], 1)
-            with patch("sys.stdin.isatty", return_value=True), \
-                    patch("decision_v2.cli.read_terminal_line", return_value="2"), \
-                    contextlib.redirect_stdout(io.StringIO()) as output:
-                response = await read_terminal(request)
-            self.assertEqual(response.kind, "escalate")
-            self.assertNotIn("Record customer response", output.getvalue())
+            self.assertFalse(any(event.type == "request_info" for event in events))
+            self.assertEqual(state.active, list(AGENTS))
+            self.assertEqual(runtime.budget.counts["gpt"], 7)
+            self.assertEqual(runtime.budget.counts["decision"], 3)
 
     async def test_missing_evidence_and_policy_failures_handoff_even_with_positive_model_validation(self):
         cases = (
@@ -1154,7 +1151,11 @@ class ScenarioTests(unittest.IsolatedAsyncioTestCase):
         for example in ("carrier-delay", "production-resequence", "order-pull-forward"):
             created = []
             credential = FakeCredential()
+            now = [0.]
+            async def sleep(seconds):
+                now[0] += seconds
             def runtime_factory(config, budget, **kwargs):
+                budget = Budget(clock=lambda: now[0], sleep=sleep)
                 runtime = AzureRuntime(config, budget, credential=credential,
                                        transport=httpx.MockTransport(MockFoundry()), **kwargs)
                 created.append(runtime)
@@ -1165,7 +1166,7 @@ class ScenarioTests(unittest.IsolatedAsyncioTestCase):
                     contextlib.redirect_stdout(io.StringIO()) as output:
                 self.assertEqual(main(["--example", example]), 0)
             self.assertEqual(created[0].scenario_id, EXAMPLES[example])
-            self.assertEqual(created[0].budget.counts, {"gpt": 7, "decision": 2})
+            self.assertEqual(created[0].budget.counts, {"gpt": 7, "decision": 3})
             self.assertIn("Plan ready", output.getvalue())
             self.assertNotIn("HUMAN CLARIFICATION", output.getvalue())
             self.assertTrue(created[0].http.is_closed)
@@ -1176,7 +1177,7 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
     make_runtime = FrameworkAgentTests.make_runtime
     first_run = ScenarioTests.first_run
 
-    async def test_reported_carrier_choices_preserve_uncertainty_without_downstream_calls(self):
+    async def test_reported_carrier_choices_consult_uncertain_roles_without_human_routing_question(self):
         service = MockFoundry()
         # Only rounded chosen scores/confidences were supplied; residuals below are synthetic.
         reported = {
@@ -1185,7 +1186,7 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
             "commercial_needed": ("not_needed", .475, .21),
         }
         def transcript(request, body):
-            if "questions" in body:
+            if "supply_chain_needed" in body.get("questions", {}):
                 answers = {}
                 for name, question in body["questions"].items():
                     selected, probability, confidence = reported[name]
@@ -1196,21 +1197,174 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
                 return httpx.Response(200, json={"answers": answers})
         service.override = transcript
         runtime, state, workflow, events = await self.first_run("carrier-delay-v2", service)
-        self.assertEqual(state.active, ["supply-chain"])
+        self.assertEqual(state.active, list(AGENTS))
         self.assertEqual(state.uncertain, ["production", "commercial"])
         self.assertEqual(state.selections["production"].selected, "not_needed")
         self.assertEqual(state.selections["production"].probabilities["not_needed"], .662)
         self.assertEqual(state.selections["production"].confidence, .49)
         self.assertEqual(state.selections["commercial"].probabilities["not_needed"], .475)
         self.assertEqual(state.selections["commercial"].confidence, .21)
+        self.assertEqual(runtime.budget.counts["decision"], 3)
+        self.assertEqual(runtime.budget.counts["gpt"], 7)
+        self.assertEqual(set(state.findings), set(AGENTS))
+        self.assertIsNotNone(state.proposal)
+        self.assertFalse(any(event.type == "request_info" for event in events))
+        self.assertEqual(next(event.data.status for event in events if event.type == "output"), "advisory_complete")
+
+    async def test_supported_no_assessment_finishes_without_roles_proposal_or_validation(self):
+        service = MockFoundry({"assessment_needed": "no_further_assessment"})
+        runtime, state, workflow, events = await self.first_run("carrier-delay-v2", service)
+        result = next(event.data for event in events if event.type == "output")
+        self.assertEqual((result.status, result.code), ("no_further_assessment", 0))
+        self.assertIsNone(result.proposal)
+        self.assertEqual(state.selections, {})
+        self.assertIsNone(state.validation)
         self.assertEqual(runtime.budget.counts["decision"], 1)
         self.assertEqual(runtime.budget.counts["gpt"], 0)
-        self.assertEqual(len(service.requests), 1)
-        self.assertEqual(state.findings, {})
-        self.assertIsNone(state.proposal)
+
+    async def test_uncertain_overall_need_conservatively_assesses(self):
+        service = MockFoundry({"assessment_needed": "cannot_determine"})
+        runtime, state, workflow, events = await self.first_run("carrier-delay-v2", service)
+        self.assertEqual(state.assessment.selected, "cannot_determine")
+        self.assertTrue(state.assessment_required)
+        self.assertEqual(runtime.budget.counts["decision"], 3)
+        self.assertEqual(next(event.data.status for event in events if event.type == "output"), "advisory_complete")
+
+    async def test_all_confidently_skipped_roles_use_canonical_coordinator_assessment(self):
+        service = MockFoundry({a.replace("-", "_") + "_needed": "not_needed" for a in AGENTS})
+        runtime, state, workflow, events = await self.first_run("carrier-delay-v2", service)
+        result = next(event.data for event in events if event.type == "output")
+        self.assertEqual((result.status, result.code), ("advisory_complete", 0))
+        self.assertEqual(state.active, [])
+        self.assertEqual(state.proposal.finding_refs, [])
+        self.assertEqual(runtime.budget.counts, {"decision": 3, "gpt": 1})
+        self.assertFalse(runtime.budget.tools)
+        self.assertIn("fixture:policy:carrier-delay-v2", state.proposal.evidence_ids)
+
+    async def test_no_assessment_cannot_bypass_quality_containment_and_missing_evidence(self):
+        runtime, state, workflow, events = await self.first_run(
+            SCENARIO_ID, MockFoundry({"assessment_needed": "no_further_assessment"}),
+        )
         request = next(event.data for event in events if event.type == "request_info")
-        self.assertEqual(request.allowed_keys, ())
-        self.assertFalse(any(event.type == "output" for event in events))
+        self.assertTrue(state.assessment_required)
+        self.assertIn("quality_containment", state.policies)
+        self.assertIn("customer_notification", state.policies)
+        self.assertIn("incoming_acceptance", state.proposal.unknown_keys)
+        self.assertEqual(request.uncertain_agents, ())
+        self.assertEqual(runtime.budget.counts["decision"], 3)
+
+    async def test_overall_gate_payload_assesses_reasoning_need_not_only_missing_data(self):
+        runtime = self.make_runtime(scenario_id="carrier-delay-v2")
+        state = RunState(scenario_id="carrier-delay-v2")
+        await DecisionClient(runtime).assess_need(state)
+        body = self.service.requests[0][1]
+        self.assertEqual(set(body["questions"]), {"assessment_needed"})
+        question = body["questions"]["assessment_needed"]
+        self.assertIn("planning or reasoning", question["instructions"])
+        self.assertIn("not only missing data", question["instructions"])
+        self.assertEqual(body["state"]["fixture"]["read_inventory"]["released_units"], 600)
+        self.assertNotIn("selections", body["state"])
+
+    async def test_no_assessment_cannot_skip_canonical_freight_authority(self):
+        records = dict(fixture_records("carrier-delay-v2"))
+        records["read_shipment"] = records["read_shipment"].model_copy(update={"freight_cost_usd": 2600})
+        with patch("decision_v2.fixtures.fixture_records", return_value=records), \
+                patch("decision_v2.runtime.fixture_records", return_value=records), \
+                patch("decision_v2.agents.fixture_records", return_value=records), \
+                patch("decision_v2.workflow.fixture_records", return_value=records):
+            runtime, state, workflow, events = await self.first_run(
+                "carrier-delay-v2", MockFoundry({"assessment_needed": "no_further_assessment"}),
+            )
+        self.assertTrue(state.assessment_required)
+        self.assertIn("freight_authority", state.policies)
+        self.assertTrue(any(event.type == "request_info" for event in events))
+        self.assertEqual(runtime.budget.counts["decision"], 3)
+
+    async def test_low_probability_overall_no_is_conservative_not_direct_success(self):
+        service = MockFoundry()
+        def weak_no(request, body):
+            if "assessment_needed" in body.get("questions", {}):
+                return httpx.Response(200, json={"answers": {"assessment_needed": {
+                    "type": "choice", "choice": "no_further_assessment",
+                    "probabilities": {"assessment_needed": .3, "no_further_assessment": .6, "cannot_determine": .1},
+                }}})
+        service.override = weak_no
+        runtime, state, workflow, events = await self.first_run("carrier-delay-v2", service)
+        self.assertTrue(state.assessment_required)
+        self.assertEqual(runtime.budget.counts["decision"], 3)
+        self.assertEqual(runtime.budget.counts["gpt"], 7)
+
+    async def test_generic_review_has_pending_and_escalation_choices(self):
+        request = ClarificationRequest(0, (), (), ("Validation unresolved",), None, scenario_id="carrier-delay-v2")
+        for choice, expected in (("1", None), ("2", "escalate")):
+            with patch("sys.stdin.isatty", return_value=True), \
+                    patch("decision_v2.cli.read_terminal_line", return_value=choice), \
+                    contextlib.redirect_stdout(io.StringIO()) as output:
+                response = await read_terminal(request)
+            self.assertEqual(response.kind if response else None, expected)
+            self.assertIn("Leave review pending", output.getvalue())
+            self.assertNotIn("Choose 2:", output.getvalue())
+
+    async def test_agent_request_reserves_room_for_complete_bounded_structured_result(self):
+        runtime = self.make_runtime(scenario_id=SCENARIO_ID)
+        state = RunState(evidence=initial_evidence())
+        await ExpertTeam(runtime).assess("production", state)
+        request = next(body for req, body in self.service.requests if req.url.path.endswith("/chat/completions"))
+        instructions = " ".join(str(message["content"]) for message in request["messages"]
+                                if message["role"] in ("system", "developer"))
+        self.assertIn("under 300 characters", instructions)
+        self.assertEqual(request["max_completion_tokens"], 1200)
+
+    async def test_transport_paces_token_heavy_requests_below_request_count_limit(self):
+        now = [0.]
+        async def sleep(seconds):
+            now[0] += seconds
+        budget = Budget(clock=lambda: now[0], sleep=sleep)
+        config = Config("https://example.services.ai.azure.com", "decision", "gpt")
+        seen = []
+        transport = GuardedTransport(config, budget, httpx.MockTransport(
+            lambda request: seen.append(now[0]) or httpx.Response(200, json=completion({"content": "{}"})),
+        ))
+        body = {"messages": [{"role": "user", "content": "x" * 15000}], "max_completion_tokens": 1200}
+        async with httpx.AsyncClient(transport=transport) as client:
+            for actor in ("production", "commercial"):
+                async with budget.stage("gpt", actor, 0):
+                    await client.post(config.endpoint + "/openai/v1/chat/completions", json=body)
+        self.assertEqual(len(seen), 2)
+        self.assertGreaterEqual(seen[1] - seen[0], 60)
+        self.assertEqual(budget.counts["gpt"], 2)
+
+    async def test_refreshed_agent_receives_baseline_and_provisional_customer_window(self):
+        runtime = self.make_runtime()
+        trace = []
+        async def simulated(request):
+            return customer_response(reference="SIMULATED planning update")
+        await run_demo(runtime, simulated, trace.append)
+        requests = [json.loads(next(message["content"] for message in body["messages"]
+                                   if message["role"] == "user"))
+                    for request, body in self.service.requests
+                    if request.url.path.endswith("/chat/completions")]
+        refreshed = next(data for data in requests if data["actor"] == "production" and data["revision"] == 1)
+        self.assertIn("planning_update", refreshed)
+        update = refreshed["planning_update"]
+        self.assertEqual(update["source"], "unverified_human_assertion")
+        self.assertEqual(update["baseline_gap"], 240)
+        self.assertEqual(update["provisional_gap"], 0)
+        self.assertEqual(update["moved_units"], 240)
+        self.assertEqual(update["revised_delivery_at"], "2026-10-17T08:00:00-05:00")
+        self.assertEqual(update["released_units"], 180)
+        self.assertEqual(fixture_records()["read_build"].deliveries[1].due_at, "2026-10-16T16:00:00-05:00")
+
+    async def test_token_rate_limit_is_explicit_and_never_retried(self):
+        service = MockFoundry()
+        service.override = lambda request, body: httpx.Response(429, json={
+            "error": {"message": "token rate limit", "type": "too_many_requests", "code": "rate_limit_exceeded"},
+        })
+        runtime = self.make_runtime(service)
+        with self.assertRaisesRegex(DemoError, "HTTP 429"):
+            await ExpertTeam(runtime).assess("production", RunState(evidence=initial_evidence()))
+        self.assertEqual(len(service.requests), 1)
+        self.assertEqual(runtime.budget.counts["gpt"], 1)
 
     async def test_selection_payload_distinguishes_nonapplicable_fields_from_missing_evidence(self):
         runtime = self.make_runtime(scenario_id="carrier-delay-v2")
@@ -1257,7 +1411,7 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         output = " ".join(lines)
         self.assertIn("model choice not needed | chosen-option probability 66.2%", output)
         self.assertIn("model-reported confidence 49%", output)
-        self.assertIn("Routing outcome: uncertain", output)
+        self.assertIn("Routing outcome: conservative consultation", output)
         self.assertIn("70%", output)
         self.assertNotIn("not selected", output)
 
@@ -1273,18 +1427,15 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("chosen-option probability 60.0%", output)
         self.assertEqual(answer.effective, "cannot_determine")
 
-    def test_routing_pause_is_not_rendered_as_a_missing_business_fact(self):
+    def test_overall_no_assessment_display_is_not_an_expert_plan_verdict(self):
         trace = []
-        state = RunState(scenario_id="carrier-delay-v2", active=["supply-chain"],
-                         uncertain=["production", "commercial"])
-        request = ClarificationRequest(0, (), ("production", "commercial"),
-                                       ("Selection uncertainty: production, commercial",), None,
-                                       scenario_id="carrier-delay-v2")
-        Presenter(trace.append, scenario_id="carrier-delay-v2").review(state, request.reasons, request)
+        answer = ChoiceAnswer(selected="no_further_assessment", probabilities={
+            "assessment_needed": .1, "no_further_assessment": .8, "cannot_determine": .1,
+        })
+        Presenter(trace.append, scenario_id="carrier-delay-v2").assessment(answer, False, [])
         output = " ".join(trace)
-        self.assertIn("Routing decision unresolved", output)
-        self.assertIn("No specialist assessment or proposal validation has run", output)
-        self.assertIn("not a finding that stock, capacity or approvals are missing", output)
+        self.assertIn("No further assessment recommended", output)
+        self.assertIn("no expert proposal or proposal validation was performed", output)
 
 
 class TerminalTests(unittest.IsolatedAsyncioTestCase):
@@ -1297,7 +1448,7 @@ class TerminalTests(unittest.IsolatedAsyncioTestCase):
             return None
         result = await run_demo(runtime, pending, trace.append)
         self.assertEqual((result.status, result.code), ("pending", 2))
-        self.assertEqual(runtime.budget.counts, {"gpt": 7, "decision": 2})
+        self.assertEqual(runtime.budget.counts, {"gpt": 7, "decision": 3})
         self.assertTrue(any("HUMAN CLARIFICATION" in line for line in trace))
         self.assertFalse(any("request_id=" in line for line in trace))
         self.assertFalse(any("Framework resume" in line for line in trace))
@@ -1316,7 +1467,7 @@ class TerminalTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(DemoError):
             await run_demo(runtime, trace=trace.append)
         self.assertEqual(runtime.budget.counts, {"decision": 1})
-        self.assertTrue(any("Decision-1 1/3" in line for line in trace))
+        self.assertTrue(any("Decision-1 1/4" in line for line in trace))
 
     async def test_terminal_adapter_resume_and_cleanup(self):
         runtime = self.make_runtime()
@@ -1326,7 +1477,7 @@ class TerminalTests(unittest.IsolatedAsyncioTestCase):
         result = await run_demo(runtime, clarify, trace.append, verbose=True)
         self.assertEqual(result.code, 2)
         self.assertEqual(sum("Framework resume" in t for t in trace), 1)
-        self.assertEqual(runtime.budget.counts, {"gpt": 12, "decision": 3})
+        self.assertEqual(runtime.budget.counts, {"gpt": 12, "decision": 4})
         await runtime.aclose()
         self.assertTrue(self.credential.closed)
         self.assertTrue(runtime.http.is_closed)
@@ -1334,7 +1485,10 @@ class TerminalTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_human_wait_is_not_shortened_by_active_time_remaining(self):
         runtime = self.make_runtime()
-        self.now[0] = 850
+        def near_active_deadline(request, body):
+            if "validation" in body.get("questions", {}):
+                self.now[0] = 850
+        self.service.override = near_active_deadline
         timeouts = []
         real_timeout = asyncio.timeout
         def observed_timeout(seconds):
@@ -1357,7 +1511,7 @@ class TerminalTests(unittest.IsolatedAsyncioTestCase):
         )):
             result = await run_demo(runtime, waiting, trace=lambda text: None)
         self.assertEqual((result.status, result.code), ("pending", 2))
-        self.assertEqual(runtime.budget.counts, {"gpt": 7, "decision": 2})
+        self.assertEqual(runtime.budget.counts, {"gpt": 7, "decision": 3})
         self.assertIsNone(runtime.budget.human_started)
 
     async def test_cancellation_reports_attempts_without_resuming(self):
@@ -1368,7 +1522,7 @@ class TerminalTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(asyncio.CancelledError):
             await run_demo(runtime, interrupted, trace.append)
         self.assertIsNone(runtime.budget.human_started)
-        self.assertEqual(runtime.budget.counts, {"gpt": 7, "decision": 2})
+        self.assertEqual(runtime.budget.counts, {"gpt": 7, "decision": 3})
         self.assertTrue(any("Actual model attempts:" in line for line in trace))
 
     async def test_windows_choices_and_fields_valid_invalid_eof_and_interrupt(self):
@@ -1428,7 +1582,7 @@ class TerminalTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Supply-Chain: reused previous finding", text)
         self.assertEqual(reader.call_count, 4)
         self.assertEqual(text.count("Framework resume:"), 1)
-        self.assertEqual(runtime.budget.counts, {"gpt": 12, "decision": 3})
+        self.assertEqual(runtime.budget.counts, {"gpt": 12, "decision": 4})
         self.assertEqual(result.code, 2)
         self.assertNotIn("Has the customer agreed", text)
         self.assertNotIn("Customer contacted.", text)
@@ -1450,7 +1604,7 @@ class TerminalTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("responsible Quality/customer contact notification", output)
         self.assertIn("customer disposition of shipped suspect stock unknown", output)
         self.assertEqual(reader.call_count, 1)
-        self.assertEqual(runtime.budget.counts, {"gpt": 7, "decision": 2})
+        self.assertEqual(runtime.budget.counts, {"gpt": 7, "decision": 3})
         self.assertEqual(sum(map(len, runtime.budget.tools.values())), 6)
         self.assertEqual(output.count("Framework resume:"), 1)
         self.assertNotIn("Original second-window uncovered demand:", output)
@@ -1470,7 +1624,7 @@ class TerminalTests(unittest.IsolatedAsyncioTestCase):
                         contextlib.redirect_stdout(io.StringIO()):
                     result = await run_demo(runtime, trace=trace.append, verbose=True)
                 self.assertEqual((result.status, result.code), ("pending", 2))
-                self.assertEqual(runtime.budget.counts, {"gpt": 7, "decision": 2})
+                self.assertEqual(runtime.budget.counts, {"gpt": 7, "decision": 3})
                 self.assertFalse(any("Framework resume:" in line for line in trace))
 
     async def test_entire_multifield_collection_shares_one_human_timeout(self):
@@ -1496,7 +1650,7 @@ class TerminalTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(timeouts.count(300), 1)
         self.assertEqual(len(prompts), 3)
         self.assertEqual((result.status, result.code), ("pending", 2))
-        self.assertEqual(runtime.budget.counts, {"gpt": 7, "decision": 2})
+        self.assertEqual(runtime.budget.counts, {"gpt": 7, "decision": 3})
         self.assertIsNone(runtime.budget.human_started)
 
     async def test_customer_choice_blocked_when_evidence_not_requested(self):
@@ -1555,7 +1709,7 @@ class TerminalTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("Quality retains the held lot", output)
             self.assertIn("Quota pacing:", output)
             self.assertEqual(result.code, 2)
-            self.assertEqual(runtime.budget.counts, {"gpt": 12, "decision": 3})
+            self.assertEqual(runtime.budget.counts, {"gpt": 12, "decision": 4})
             self.assertEqual("Framework resume:" in output, verbose)
             self.assertEqual("complete option probabilities" in output, verbose)
             self.assertEqual("fixture:inventory:quality-v2" in output, verbose)
