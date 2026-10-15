@@ -7,9 +7,9 @@ from agent_framework import (
 from .agents import ExpertTeam
 from .contracts import (
     AGENTS, AFFECTED, SCENARIO_ID, ClarificationRequest, DemoError, FinalResult, HumanEvidence,
-    HumanResponse, RunState, affected_agents,
+    HumanResponse, RunState, ScopedFinding, affected_agents,
 )
-from .fixtures import assessment_blockers, fixture_records, option_disagreements, policy_requirements, validate_delivery_change
+from .fixtures import assessment_blockers, fixture_records, option_disagreements, policy_requirements, validate_delivery_change, scoped_option_disagreements
 from .presentation import Presenter
 from .runtime import Budget, DecisionClient
 
@@ -111,6 +111,11 @@ def review_reasons(state: RunState) -> list[str]:
     if state.proposal:
         if state.scenario_id != SCENARIO_ID:
             reasons.extend(option_disagreements(state.proposal, fixture_records(state.scenario_id)))
+        if state.proposal.selected_option_id is not None:
+            for finding in state.findings.values():
+                if isinstance(finding, ScopedFinding):
+                    reasons.extend(scoped_option_disagreements(
+                        finding, fixture_records(state.scenario_id), state.proposal.selected_option_id))
         if (state.scenario_id != SCENARIO_ID and fixture_records(state.scenario_id)["read_build"].options
                 and state.proposal.selected_option_id is None):
             reasons.append("Planning choice unresolved: Coordinator did not select an evidenced option.")

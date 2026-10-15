@@ -3,7 +3,7 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 AGENTS = ("supply-chain", "production", "commercial")
 SELECTION_OPTIONS = ("needed", "not_needed", "cannot_determine")
@@ -165,6 +165,125 @@ class ExpertFinding(PlanDependencies):
         return FindingRef.integer_revision(value)
 
 
+class OptionEvidence(StrictModel):
+    option_id: Annotated[str, Field(min_length=1, max_length=64)]
+    assessment: Annotated[str, Field(min_length=1, max_length=200)]
+    evidence_ids: list[EvidenceId] = Field(min_length=1, max_length=12)
+
+
+class SupplyOptionAssessment(OptionEvidence):
+    freight_total_usd: Annotated[float, Field(ge=0, allow_inf_nan=False)] | None
+    uses_alternative_carrier: bool | None
+    uses_expedited_freight: bool | None
+
+
+class ProductionOptionAssessment(OptionEvidence):
+    required_cell_minutes: Annotated[int, Field(ge=0)] | None
+    available_cell_minutes: Annotated[int, Field(ge=0)] | None
+    packing_minutes: Annotated[int, Field(ge=0)] | None
+    ready_at: AwareDatetime | None
+    uses_alternative_cell: bool | None
+    requires_overtime: bool | None
+    displaces_other_orders: bool | None
+    approval_requests: list[Literal["production_authority"]] = Field(max_length=1)
+
+
+class CommercialOptionAssessment(OptionEvidence):
+    pulls_order_forward: bool | None
+    changes_customer_commitment: bool | None
+    approval_requests: list[Literal["freight_authority", "customer_commitment"]] = Field(max_length=2)
+
+
+class ScopedFindingBase(StrictModel):
+    revision: Literal[0, 1]
+    assessment: Annotated[str, Field(min_length=1, max_length=300)]
+    implication: Annotated[str, Field(min_length=1, max_length=300)]
+    preferred_option_id: Annotated[str, Field(min_length=1, max_length=64)] | None = None
+    uses_held_stock: bool
+    containment_required: bool
+    safety_approval_requests: list[Literal["quality_containment", "customer_notification"]] = Field(max_length=2)
+    evidence_ids: list[EvidenceId] = Field(min_length=1, max_length=12)
+    unknown_keys: list[UnknownKey] = Field(max_length=12)
+    conflicts: list[Conflict] = Field(max_length=6)
+
+    @field_validator("revision", mode="before")
+    @classmethod
+    def integer_revision(cls, value):
+        return FindingRef.integer_revision(value)
+
+    @classmethod
+    def model_json_schema(cls, *args, **kwargs):
+        schema = super().model_json_schema(*args, **kwargs)
+        # Foundry's wire-schema subset differs from local Pydantic validation.
+        unsupported = {
+            "minLength", "maxLength", "pattern", "format", "minimum", "maximum", "multipleOf",
+            "patternProperties", "unevaluatedProperties", "propertyNames", "minProperties", "maxProperties",
+            "unevaluatedItems", "contains", "minContains", "maxContains", "minItems", "maxItems", "uniqueItems",
+        }
+        def restrict(node):
+            for key in unsupported:
+                node.pop(key, None)
+            for group in ("properties", "$defs"):
+                for child in node.get(group, {}).values():
+                    restrict(child)
+            if isinstance(node.get("items"), dict):
+                restrict(node["items"])
+            for group in ("anyOf", "allOf", "oneOf"):
+                for child in node.get(group, []):
+                    restrict(child)
+        restrict(schema)
+        return schema
+
+
+class SupplyFinding(ScopedFindingBase):
+    agent_id: Literal["supply-chain"]
+    option_assessments: list[SupplyOptionAssessment] = Field(min_length=2, max_length=2)
+
+
+class ProductionFinding(ScopedFindingBase):
+    agent_id: Literal["production"]
+    option_assessments: list[ProductionOptionAssessment] = Field(min_length=2, max_length=2)
+
+
+class CommercialFinding(ScopedFindingBase):
+    agent_id: Literal["commercial"]
+    option_assessments: list[CommercialOptionAssessment] = Field(min_length=2, max_length=2)
+
+
+OptionAssessment = SupplyOptionAssessment | ProductionOptionAssessment | CommercialOptionAssessment
+ScopedFinding = SupplyFinding | ProductionFinding | CommercialFinding
+Finding = ExpertFinding | ScopedFinding
+
+
+def validate_option_finding(finding: ScopedFinding, option_ids: set[str], allowed: set[str]) -> None:
+    ids = [assessment.option_id for assessment in finding.option_assessments]
+    if len(ids) != len(set(ids)) or set(ids) != option_ids:
+        raise DemoError("Specialist must assess each supplied planning option exactly once.")
+    if finding.preferred_option_id is not None and finding.preferred_option_id not in option_ids:
+        raise DemoError("Specialist preference is absent from supplied planning options.")
+    validate_references(finding, allowed)
+    for assessment in finding.option_assessments:
+        if not set(assessment.evidence_ids).issubset(allowed):
+            raise DemoError("Option assessment cites evidence absent from its supplied ledger.")
+
+
+def option_assessment(finding: ScopedFinding, option_id: str) -> OptionAssessment:
+    for assessment in finding.option_assessments:
+        if assessment.option_id == option_id:
+            return assessment
+    raise DemoError("Specialist omitted the selected planning option.")
+
+
+def dependency_claims(assessment: OptionAssessment) -> dict[str, bool | None]:
+    if isinstance(assessment, SupplyOptionAssessment):
+        names = ("uses_alternative_carrier", "uses_expedited_freight")
+    elif isinstance(assessment, ProductionOptionAssessment):
+        names = ("uses_alternative_cell", "requires_overtime", "displaces_other_orders")
+    else:
+        names = ("pulls_order_forward", "changes_customer_commitment")
+    return {name: getattr(assessment, name) for name in names}
+
+
 class CoordinatedProposal(PlanDependencies):
     revision: Literal[0, 1]
     selected_option_id: Annotated[str, Field(min_length=1, max_length=64)] | None = None
@@ -262,7 +381,7 @@ class RunState:
     selections: dict[str, ChoiceAnswer] = field(default_factory=dict)
     active: list[str] = field(default_factory=list)
     uncertain: list[str] = field(default_factory=list)
-    findings: dict[str, ExpertFinding] = field(default_factory=dict)
+    findings: dict[str, Finding] = field(default_factory=dict)
     overlays: list[HumanEvidence] = field(default_factory=list)
     proposal: CoordinatedProposal | None = None
     validation: ChoiceAnswer | None = None
@@ -282,7 +401,7 @@ def affected_agents(response: HumanResponse, active: list[str], uncertain: list[
     return [agent for agent in AGENTS if agent in selected]
 
 
-def validate_references(output: ExpertFinding | CoordinatedProposal, allowed: set[str]) -> None:
+def validate_references(output: Finding | CoordinatedProposal, allowed: set[str]) -> None:
     citations = set(output.evidence_ids)
     for conflict in output.conflicts:
         citations.update(conflict.evidence_ids)
@@ -299,7 +418,9 @@ def validate_proposal(proposal: CoordinatedProposal, state: RunState) -> None:
         raise DemoError("Coordinator omitted or duplicated a participating finding.")
     validate_references(proposal, set(state.evidence))
     findings = [state.findings[a] for a in state.active]
-    applicable = [f for f in findings if proposal.selected_option_id is None
+    legacy = [f for f in findings if isinstance(f, ExpertFinding)]
+    scoped = [f for f in findings if isinstance(f, ScopedFinding)]
+    applicable = [f for f in legacy if proposal.selected_option_id is None
                   or f.selected_option_id in (None, proposal.selected_option_id)]
     if proposal.uses_held_stock or (state.scenario_id == SCENARIO_ID and not proposal.containment_required):
         raise DemoError("Coordinator cannot release held stock or omit shipped-lot containment.")
@@ -310,12 +431,22 @@ def validate_proposal(proposal: CoordinatedProposal, state: RunState) -> None:
         relevant = findings if field_name == "containment_required" else applicable
         if any(getattr(f, field_name) for f in relevant) and not getattr(proposal, field_name):
             raise DemoError(f"Coordinator omitted a material {field_name} requirement.")
+    selected = [option_assessment(f, proposal.selected_option_id) for f in scoped
+                if proposal.selected_option_id is not None]
+    for assessment in selected:
+        for name, value in dependency_claims(assessment).items():
+            if value is True and not getattr(proposal, name):
+                raise DemoError(f"Coordinator omitted a material {name} requirement.")
     for field_name in ("unknown_keys", "approval_requests"):
         relevant = findings if field_name == "unknown_keys" else applicable
         required = {v for f in relevant for v in getattr(f, field_name)}
         if field_name == "approval_requests":
-            required.update(v for f in findings for v in f.approval_requests
+            required.update(v for f in legacy for v in f.approval_requests
                             if v in ("quality_containment", "customer_notification"))
+            required.update(value for assessment in selected
+                            if isinstance(assessment, (ProductionOptionAssessment, CommercialOptionAssessment))
+                            for value in assessment.approval_requests)
+            required.update(value for finding in scoped for value in finding.safety_approval_requests)
         if not required.issubset(getattr(proposal, field_name)):
             raise DemoError(f"Coordinator omitted unresolved {field_name}.")
     conflicts = {c.model_dump_json() for f in findings for c in f.conflicts}

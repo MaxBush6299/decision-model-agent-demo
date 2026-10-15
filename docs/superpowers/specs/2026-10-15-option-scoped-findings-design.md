@@ -1,6 +1,7 @@
 # Role-specific, option-scoped findings
 
-**Status:** Approach approved; written specification awaiting review.
+**Status:** Written specification approved; implemented and verified offline.
+Live acceptance remains pending separate authorization.
 
 The user approved focused output-contract changes after two instruction-only
 live tests failed, then selected role-specific, per-option findings. Further
@@ -54,7 +55,10 @@ No action, preference or finding grants execution/customer/spending authority.
 
 Global uncertainty/conflict preservation remains unchanged. Safety claims
 such as held-stock use or containment remain explicit at finding level and
-retain existing guards. No Quality requirement is imposed on healthy fixtures.
+retain existing guards. A bounded global `safety_approval_requests` field retains
+Quality-containment/customer-notification requirements independently of option
+selection; it cannot carry freight or production approval requests. No Quality
+requirement is imposed on healthy fixtures.
 
 ## Coordinator and host behavior
 
@@ -100,6 +104,13 @@ request/token/time pacing. Keep explanations compact; verify representative
 two-option payloads fit the existing request budget rather than raising it.
 If a response is truncated or cannot fit the budget, fail explicitly.
 
+Implementation retains offset-aware timestamp types and all local validation
+bounds. New finding wire schemas omit unsupported JSON Schema constraints
+(including `format` and length/range limits), following the
+[Microsoft Learn structured-output subset](https://learn.microsoft.com/azure/ai-foundry/openai/how-to/structured-outputs#supported-schemas-and-limitations);
+the actual framework-emitted schema is checked offline. This serialization
+adaptation does not normalize claims or relax local output validation.
+
 ## Offline acceptance and live boundary
 
 Tests use the actual framework with fake external transport. Cover both
@@ -120,3 +131,9 @@ authorized by this spec. Report implementation as offline-verified until a
 separately approved bounded live test confirms actual model behavior; no claim
 of stable routes, calibrated confidence, operational safety or guaranteed
 success follows from changing the contract.
+
+Implementation verification:162 offline tests cover v1/v2, including actual
+framework transport boundaries and representative compact join request sizing.
+CLI/help, installed-package consistency and diff checks also pass. No new live
+call was made; previous instruction-only failures remain unresolved acceptance
+evidence until an authorized test exercises this revision.

@@ -2,8 +2,8 @@ import json
 import textwrap
 from datetime import datetime
 
-from .contracts import SCENARIO_ID
-from .fixtures import SNAPSHOT, delivery_position, fixture_records, issue_id, operational_position, operational_checks, operational_options
+from .contracts import SCENARIO_ID, ScopedFinding
+from .fixtures import SNAPSHOT, delivery_position, fixture_records, issue_id, operational_position, operational_checks, operational_options, scoped_option_disagreements
 
 LABELS = {
     "shipment_arrival": "replacement arrival unconfirmed",
@@ -214,9 +214,23 @@ class Presenter:
             "unverified customer-planner assertion" if key.startswith("human:") else sources[key]
             for key in finding.evidence_ids
         ))
-        self.line("  Recommended next step: " + ACTION_LABELS[finding.recommended_action])
-        if finding.selected_option_id:
-            self.line("  Option considered: " + finding.selected_option_id)
+        if isinstance(finding, ScopedFinding):
+            for assessment in finding.option_assessments:
+                self.line(f"  Option assessment {assessment.option_id}: {assessment.assessment}")
+                claims = assessment.model_dump(mode="json", exclude={"option_id", "assessment", "evidence_ids"})
+                self.line("    Model claims: " + "; ".join(
+                    f"{key}={'unknown' if value is None else value}" for key, value in claims.items()))
+                self.line("    Sources: " + ", ".join(
+                    "unverified human assertion" if key.startswith("human:") else sources[key]
+                    for key in assessment.evidence_ids))
+                for reason in scoped_option_disagreements(finding, fixture_records(self.scenario_id), assessment.option_id):
+                    self.line("    Canonical check: " + reason)
+            if finding.preferred_option_id is not None:
+                self.line("  Model preference (not final selection): " + finding.preferred_option_id)
+        else:
+            self.line("  Recommended next step: " + ACTION_LABELS[finding.recommended_action])
+            if finding.selected_option_id:
+                self.line("  Option considered: " + finding.selected_option_id)
         if finding.unknown_keys:
             self.line("  Still missing: " + "; ".join(self.labels[k] for k in finding.unknown_keys))
         self.record("complete finding/provenance", finding)

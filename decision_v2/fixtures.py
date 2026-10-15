@@ -10,6 +10,8 @@ from pydantic import Field, model_validator
 from .contracts import (
     CoordinatedProposal, CustomerDeliveryChange, DemoError, HumanEvidence,
     StrictModel, SCENARIO_ID, SCENARIO_IDS, ScenarioId,
+    ScopedFinding, SupplyOptionAssessment, ProductionOptionAssessment,
+    dependency_claims, option_assessment,
 )
 
 SNAPSHOT = "2026-10-15T14:00:00-05:00"
@@ -572,7 +574,8 @@ def operational_position(records):
     minutes = ceil(build.production_units * 60 / cell.units_per_hour) + cell.setup_minutes if cell else 0
     ready = (datetime.fromisoformat(cell.available_from) + timedelta(minutes=minutes + build.packing_minutes)
              if cell else datetime.fromisoformat(build.finished_ready_at) if build.finished_ready_at else None)
-    available = ((datetime.fromisoformat(cell.available_until) - datetime.fromisoformat(cell.available_from)).total_seconds() / 60
+    available = ((min(datetime.fromisoformat(cell.available_until), datetime.fromisoformat(cell.staffed_shift_end))
+                  - datetime.fromisoformat(cell.available_from)).total_seconds() / 60
                  - cell.reserved_minutes_other_orders if cell else 0)
     return {
         "demand_units": sum(d.quantity for d in build.deliveries),
@@ -727,6 +730,36 @@ def option_disagreements(proposal, records):
     return [f"Selected-option contradiction: {key}={getattr(proposal, key)}; "
             f"canonical {proposal.selected_option_id} records support {value}."
             for key, value in selected["dependencies"].items() if getattr(proposal, key) != value]
+
+
+def scoped_option_disagreements(finding: ScopedFinding, records, option_id: str) -> list[str]:
+    assessment = option_assessment(finding, option_id)
+    selected = operational_options(records)[option_id]
+    expected = dict(selected["dependencies"])
+    if selected["checks"]["customer_request"] and selected["checks"]["delivery_window"]:
+        expected["changes_customer_commitment"] = False
+    measurements = {}
+    if isinstance(assessment, SupplyOptionAssessment):
+        measurements["freight_total_usd"] = selected["freight_total_usd"]
+    elif isinstance(assessment, ProductionOptionAssessment):
+        build = next(option for option in records["read_build"].options if option.option_id == option_id)
+        measurements.update(
+            required_cell_minutes=selected["position"]["production_minutes"],
+            available_cell_minutes=selected["position"]["available_cell_minutes"],
+            packing_minutes=build.packing_minutes,
+            ready_at=datetime.fromisoformat(selected["position"]["ready_at"]),
+        )
+    reasons = []
+    values = {**dependency_claims(assessment), **{key: getattr(assessment, key) for key in measurements}}
+    for key, value in values.items():
+        label = f"{finding.agent_id}/{option_id} {key}"
+        if value is None:
+            reasons.append(f"Scoped evidence unknown: {label}.")
+        else:
+            canonical = measurements.get(key, expected.get(key))
+            if canonical is not None and value != canonical:
+                reasons.append(f"Scoped evidence contradiction: {label}={value}; canonical records support {canonical}.")
+    return reasons
 
 
 def operational_checks(records, option_id=None):

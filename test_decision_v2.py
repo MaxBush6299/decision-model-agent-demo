@@ -40,6 +40,109 @@ def customer_response(quantity=240, reference="Synthetic customer planner phone 
     return HumanResponse(kind="clarify", updates={"customer_delivery_change": change})
 
 
+def scoped_payload(actor, scenario="order-pull-forward-v2"):
+    options = ("cell-p2", "cell-p3") if scenario == "production-resequence-v2" else ("full-early", "split-standard")
+    evidence = [f"fixture:{name[5:].replace('approval_policy', 'policy')}:{scenario}"
+                for name in ALLOWLIST[actor]]
+    measurements = {
+        "cell-p2": (180, 240, 60, "2026-10-15T18:30:00-05:00"),
+        "cell-p3": (250, 300, 60, "2026-10-15T19:25:00-05:00"),
+        "full-early": (150, 180, 60, "2026-10-15T18:00:00-05:00"),
+        "split-standard": (150, 180, 60, "2026-10-15T18:00:00-05:00"),
+    }
+    assessments = []
+    for option in options:
+        item = dict(option_id=option, assessment="Documented option assessed.", evidence_ids=evidence)
+        if actor == "supply-chain":
+            item.update(freight_total_usd=1800 if option == "full-early" else 0,
+                        uses_alternative_carrier=option == "full-early",
+                        uses_expedited_freight=option == "full-early")
+        elif actor == "production":
+            minutes, available, packing, ready = measurements[option]
+            item.update(required_cell_minutes=minutes, available_cell_minutes=available,
+                        packing_minutes=packing, ready_at=ready,
+                        uses_alternative_cell=scenario == "production-resequence-v2",
+                        requires_overtime=False, displaces_other_orders=False, approval_requests=[])
+        else:
+            item.update(pulls_order_forward=scenario == "order-pull-forward-v2",
+                        changes_customer_commitment=False, approval_requests=[])
+        assessments.append(item)
+    return dict(agent_id=actor, revision=0, assessment="Synthetic options assessed.",
+                implication="No authority or execution granted.", preferred_option_id=None,
+                uses_held_stock=False, containment_required=False, evidence_ids=evidence,
+                safety_approval_requests=[], unknown_keys=[], conflicts=[], option_assessments=assessments)
+
+
+class OptionContractTests(unittest.TestCase):
+    def test_non_owner_claims_are_rejected(self):
+        from decision_v2.contracts import SupplyFinding, ProductionFinding, CommercialFinding
+        for actor, model, extra in (
+            ("supply-chain", SupplyFinding, {"approval_requests": ["freight_authority"]}),
+            ("supply-chain", SupplyFinding, {"requires_overtime": False}),
+            ("production", ProductionFinding, {"uses_expedited_freight": False}),
+            ("production", ProductionFinding, {"approval_requests": ["freight_authority"]}),
+            ("commercial", CommercialFinding, {"displaces_other_orders": False}),
+        ):
+            with self.subTest(actor=actor, extra=extra), self.assertRaises(ValidationError):
+                data = scoped_payload(actor)
+                data["option_assessments"][0].update(extra)
+                model.model_validate_json(json.dumps(data))
+
+    def test_null_claim_remains_explicit_unknown(self):
+        from decision_v2.contracts import SupplyFinding, dependency_claims
+        data = scoped_payload("supply-chain")
+        data["option_assessments"][0]["uses_expedited_freight"] = None
+        finding = SupplyFinding.model_validate_json(json.dumps(data))
+        self.assertIsNone(dependency_claims(finding.option_assessments[0])["uses_expedited_freight"])
+        self.assertIsNone(finding.preferred_option_id)
+
+    def test_option_coverage_preference_and_nested_citations_are_checked(self):
+        from decision_v2.contracts import SupplyFinding, validate_option_finding
+        for mutate in (
+            lambda d: d["option_assessments"].pop(),
+            lambda d: d["option_assessments"][1].update(option_id="full-early"),
+            lambda d: d["option_assessments"][1].update(option_id="invented"),
+            lambda d: d.update(preferred_option_id="invented"),
+            lambda d: d["option_assessments"][0]["evidence_ids"].append("invented:reference"),
+        ):
+            data = scoped_payload("supply-chain")
+            allowed = set(data["evidence_ids"])
+            mutate(data)
+            with self.subTest(data=data), self.assertRaises((DemoError, ValidationError)):
+                finding = SupplyFinding.model_validate_json(json.dumps(data))
+                validate_option_finding(finding, {"full-early", "split-standard"}, allowed)
+
+    def test_numeric_time_and_revision_bounds(self):
+        from decision_v2.contracts import ProductionFinding
+        for change in (
+            {"required_cell_minutes": -1}, {"available_cell_minutes": True},
+            {"ready_at": "2026-10-15T18:00:00"},
+        ):
+            data = scoped_payload("production")
+            data["option_assessments"][0].update(change)
+            with self.subTest(change=change), self.assertRaises(ValidationError):
+                ProductionFinding.model_validate_json(json.dumps(data))
+        data = scoped_payload("production")
+        data["revision"] = True
+        with self.assertRaises(ValidationError):
+            ProductionFinding.model_validate_json(json.dumps(data))
+
+
+class OptionPresentationTests(unittest.TestCase):
+    def test_comparison_shows_both_options_and_unknown_without_fake_selection(self):
+        from decision_v2.contracts import SupplyFinding
+        data = scoped_payload("supply-chain")
+        data["option_assessments"][0]["uses_expedited_freight"] = None
+        lines = []
+        Presenter(lines.append, scenario_id="order-pull-forward-v2").finding(
+            SupplyFinding.model_validate_json(json.dumps(data)))
+        text = "\n".join(lines)
+        for value in ("full-early", "split-standard", "unknown", "Model claims"):
+            self.assertIn(value, text)
+        self.assertNotIn("Selected planning option", text)
+        self.assertNotIn("Recommended next step", text)
+
+
 class ContractTests(unittest.TestCase):
     def test_selection_uncertainty(self):
         answer = ChoiceAnswer(selected="needed", probabilities={
@@ -343,21 +446,29 @@ class MockFoundry:
             }, "tool_calls"))
         if actor == "coordinator":
             findings = data["findings"]
+            selected_option = {"production-resequence-v2": "cell-p2",
+                               "order-pull-forward-v2": "split-standard"}.get(scenario)
+            findings = [{
+                **finding,
+                **next((item for item in finding.get("option_assessments", [])
+                        if item["option_id"] == selected_option), {}),
+            } for finding in findings]
             output = {
                 "revision": data["revision"], "recommended_action": action,
                 "selected_option_id": {"production-resequence-v2": "cell-p2",
                                        "order-pull-forward-v2": "split-standard"}.get(scenario),
                 "uses_held_stock": any(f["uses_held_stock"] for f in findings),
-                "uses_expedited_freight": any(f["uses_expedited_freight"] for f in findings),
+                "uses_expedited_freight": any(f.get("uses_expedited_freight", False) for f in findings),
                 "containment_required": quality or any(f["containment_required"] for f in findings),
-                "changes_customer_commitment": any(f["changes_customer_commitment"] for f in findings),
+                "changes_customer_commitment": any(f.get("changes_customer_commitment", False) for f in findings),
                 "brief": ("Advisory: establish remaining evidence; no authority or actions granted." if quality else
                           "Advisory: the documented option preserves delivery windows, existing authority and other orders; no actions performed."),
                 "finding_refs": [{"agent_id": f["agent_id"], "revision": f["revision"]} for f in findings],
                 "evidence_ids": (sorted({e for f in findings for e in f["evidence_ids"]}) if findings else
                                  [r["evidence_id"] for r in data["canonical_records"].values()]),
                 "unknown_keys": sorted({e for f in findings for e in f["unknown_keys"]} | set(data["required_unknown_keys"])),
-                "approval_requests": sorted({e for f in findings for e in f["approval_requests"]}),
+                "approval_requests": sorted({e for f in findings for e in
+                                             (*f.get("approval_requests", []), *f.get("safety_approval_requests", []))}),
                 "conflicts": [c for f in findings for c in f["conflicts"]],
             }
             for key in ("uses_alternative_carrier", "uses_alternative_cell", "pulls_order_forward",
@@ -382,6 +493,12 @@ class MockFoundry:
                 "unknown_keys": data["required_unknown_keys"], "approval_requests": [],
                 "conflicts": data["previous_conflicts"],
             }
+            if len(getattr(records["read_build"], "options", ())) > 1:
+                output = scoped_payload(actor, scenario)
+                output.update(revision=data["revision"], unknown_keys=data["required_unknown_keys"],
+                              conflicts=data["previous_conflicts"])
+            elif getattr(records["read_build"], "options", ()):
+                output["selected_option_id"] = records["read_build"].options[0].option_id
         return httpx.Response(200, json=completion({"content": json.dumps(output)}))
 
 
@@ -987,7 +1104,8 @@ class ScenarioTests(unittest.IsolatedAsyncioTestCase):
                 serialized = json.dumps(context)
                 self.assertNotIn("expected_specialist", serialized)
                 self.assertNotIn("Expected specialist route", serialized)
-                self.assertNotIn("preferred_option", serialized)
+                if "findings" not in context:
+                    self.assertNotIn("preferred_option", serialized)
                 self.assertIn("options", context["fixture"]["read_build"])
                 self.assertNotIn("cell", context["fixture"]["read_build"])
                 self.assertNotIn("pickup_at", context["fixture"]["read_shipment"])
@@ -1002,15 +1120,16 @@ class ScenarioTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_discarded_option_dependencies_and_approvals_do_not_contaminate_selected_plan(self):
         runtime, state, workflow, events = await self.first_run("order-pull-forward-v2")
-        state.findings["supply-chain"] = state.findings["supply-chain"].model_copy(update={
-            "selected_option_id": "full-early", "uses_expedited_freight": True,
-            "uses_alternative_carrier": True, "approval_requests": ["freight_authority"],
-        })
-        # Selected split plan still cites the discarded recommendation, but does not inherit its freight.
+        finding = state.findings["commercial"]
+        data = finding.model_dump()
+        data["preferred_option_id"] = "full-early"
+        data["option_assessments"][0]["approval_requests"] = ["freight_authority"]
+        state.findings["commercial"] = type(finding).model_validate(data)
+        # Preference does not change claim scope; full-option freight cannot contaminate split.
         from decision_v2.contracts import validate_proposal
         validate_proposal(state.proposal, state)
-        same = state.findings["supply-chain"].model_copy(update={"selected_option_id": "split-standard"})
-        state.findings["supply-chain"] = same
+        data["option_assessments"][1]["approval_requests"] = ["freight_authority"]
+        state.findings["commercial"] = type(finding).model_validate(data)
         with self.assertRaisesRegex(DemoError, "omitted"):
             validate_proposal(state.proposal, state)
 
@@ -1040,8 +1159,8 @@ class ScenarioTests(unittest.IsolatedAsyncioTestCase):
         from decision_v2.contracts import validate_proposal
         runtime, state, workflow, events = await self.first_run("order-pull-forward-v2")
         state.findings["supply-chain"] = state.findings["supply-chain"].model_copy(update={
-            "selected_option_id": "full-early", "containment_required": True,
-            "approval_requests": ["customer_notification"],
+            "preferred_option_id": "full-early", "containment_required": True,
+            "safety_approval_requests": ["customer_notification"],
         })
         with self.assertRaisesRegex(DemoError, "containment_required"):
             validate_proposal(state.proposal, state)
@@ -1250,7 +1369,12 @@ class ScenarioTests(unittest.IsolatedAsyncioTestCase):
                     message = payload["choices"][0]["message"]
                     if message.get("content"):
                         record = json.loads(message["content"])
-                        record[field] = True
+                        if "option_assessments" in record and field != "containment_required":
+                            for item in record["option_assessments"]:
+                                if field in item:
+                                    item[field] = True
+                        else:
+                            record[field] = True
                         message["content"] = json.dumps(record)
                         return httpx.Response(200, json=payload)
                 return response
@@ -1266,7 +1390,10 @@ class ScenarioTests(unittest.IsolatedAsyncioTestCase):
                 message = payload["choices"][0]["message"]
                 if message.get("content"):
                     record = json.loads(message["content"])
-                    record["requires_overtime"] = "agent_id" in record
+                    if record.get("agent_id") == "production":
+                        record["option_assessments"][1]["requires_overtime"] = True
+                    elif "agent_id" not in record:
+                        record["requires_overtime"] = False
                     message["content"] = json.dumps(record)
                     return httpx.Response(200, json=payload)
             return response
@@ -1400,6 +1527,169 @@ class ScenarioTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(credential.closed)
 
 
+class ScopedFrameworkTests(unittest.IsolatedAsyncioTestCase):
+    make_runtime = FrameworkAgentTests.make_runtime
+    first_run = ScenarioTests.first_run
+
+    async def test_two_options_are_scoped_by_actual_role_without_a_required_preference(self):
+        from decision_v2.contracts import SupplyFinding, ProductionFinding, CommercialFinding
+        runtime, state, workflow, events = await self.first_run("order-pull-forward-v2")
+        for actor, model in (("supply-chain", SupplyFinding), ("production", ProductionFinding),
+                             ("commercial", CommercialFinding)):
+            self.assertIsInstance(state.findings[actor], model)
+            self.assertIsNone(state.findings[actor].preferred_option_id)
+            self.assertEqual({a.option_id for a in state.findings[actor].option_assessments},
+                             {"full-early", "split-standard"})
+        self.assertFalse(state.proposal.uses_expedited_freight)
+        self.assertEqual(state.proposal.selected_option_id, "split-standard")
+        self.assertFalse(any(event.type == "request_info" for event in events))
+        self.assertEqual(runtime.budget.counts, {"gpt": 7, "decision": 3})
+
+    async def test_selected_measurement_unknown_and_packing_confusion_require_review(self):
+        from decision_v2.contracts import ProductionFinding
+        runtime, state, workflow, events = await self.first_run("order-pull-forward-v2")
+        for change in ({"required_cell_minutes": 210}, {"available_cell_minutes": 210},
+                       {"packing_minutes": None}, {"ready_at": "2026-10-15T20:30:00-05:00"},
+                       {"requires_overtime": None}):
+            data = scoped_payload("production")
+            data["option_assessments"][1].update(change)
+            state.findings["production"] = ProductionFinding.model_validate_json(json.dumps(data))
+            with self.subTest(change=change):
+                self.assertTrue(any("Scoped" in reason for reason in review_reasons(state)))
+                self.assertEqual(state.findings["production"].model_dump(mode="json")["option_assessments"][1],
+                                 data["option_assessments"][1])
+
+    async def test_unselected_measurement_does_not_become_selected_requirement(self):
+        from decision_v2.contracts import ProductionFinding
+        runtime, state, workflow, events = await self.first_run("order-pull-forward-v2")
+        data = scoped_payload("production")
+        data["option_assessments"][0].update(required_cell_minutes=210, requires_overtime=True)
+        state.findings["production"] = ProductionFinding.model_validate_json(json.dumps(data))
+        self.assertFalse(review_reasons(state))
+
+    async def test_coordinator_cannot_drop_selected_role_claim(self):
+        from decision_v2.contracts import ProductionFinding, validate_proposal
+        runtime, state, workflow, events = await self.first_run("order-pull-forward-v2")
+        data = scoped_payload("production")
+        data["option_assessments"][1]["displaces_other_orders"] = True
+        state.findings["production"] = ProductionFinding.model_validate_json(json.dumps(data))
+        with self.assertRaisesRegex(DemoError, "displaces_other_orders"):
+            validate_proposal(state.proposal, state)
+
+    async def test_invalid_option_identity_or_nested_evidence_stops_without_repair(self):
+        for change in (
+            lambda d: d["option_assessments"][1].update(option_id="full-early"),
+            lambda d: d["option_assessments"][0]["evidence_ids"].append("invented:record"),
+            lambda d: d.update(preferred_option_id="invented"),
+        ):
+            service, base = MockFoundry(), MockFoundry()
+            def alter(request, body):
+                response = base(request)
+                if request.url.path.endswith("/chat/completions"):
+                    payload = response.json()
+                    message = payload["choices"][0]["message"]
+                    if message.get("content"):
+                        data = json.loads(message["content"])
+                        change(data)
+                        message["content"] = json.dumps(data)
+                        return httpx.Response(200, json=payload)
+                return response
+            service.override = alter
+            with self.subTest(change=change), self.assertRaises(DemoError):
+                await self.first_run("order-pull-forward-v2", service)
+            self.assertEqual(self.runtime.budget.counts, {"gpt": 2, "decision": 2})
+
+    async def test_positive_validation_cannot_hide_selected_scoped_numeric_error(self):
+        service, base = MockFoundry(), MockFoundry()
+        def alter(request, body):
+            response = base(request)
+            if request.url.path.endswith("/chat/completions"):
+                payload = response.json()
+                message = payload["choices"][0]["message"]
+                if message.get("content"):
+                    data = json.loads(message["content"])
+                    if data.get("agent_id") == "production":
+                        data["option_assessments"][1]["required_cell_minutes"] = 210
+                        message["content"] = json.dumps(data)
+                        return httpx.Response(200, json=payload)
+            return response
+        service.override = alter
+        runtime, state, workflow, events = await self.first_run("order-pull-forward-v2", service)
+        self.assertTrue(state.validation.satisfactory)
+        self.assertEqual(state.validation.selected, "Addresses the issue")
+        self.assertTrue(any(event.type == "request_info" for event in events))
+        self.assertEqual(state.findings["production"].option_assessments[1].required_cell_minutes, 210)
+        self.assertTrue(any("required_cell_minutes" in reason for reason in review_reasons(state)))
+
+    async def test_single_option_record_keeps_the_legacy_contract(self):
+        from decision_v2.contracts import ExpertFinding
+        records = dict(fixture_records("order-pull-forward-v2"))
+        for name in ("read_build", "read_shipment"):
+            records[name] = records[name].model_copy(update={"options": records[name].options[:1]})
+        with patch("decision_v2.agents.fixture_records", return_value=records), patch(
+            "test_decision_v2.fixture_records", return_value=records
+        ):
+            runtime = self.make_runtime(scenario_id="order-pull-forward-v2")
+            state = RunState(scenario_id="order-pull-forward-v2")
+            finding = await ExpertTeam(runtime).assess("supply-chain", state)
+        self.assertIsInstance(finding, ExpertFinding)
+
+    def test_canonical_cell_capacity_is_bounded_by_the_staffed_shift(self):
+        records = dict(fixture_records("production-resequence-v2"))
+        build = records["read_build"]
+        records["read_build"] = build.model_copy(update={
+            "cell": build.cell.model_copy(update={"staffed_shift_end": "2026-10-15T18:00:00-05:00"}),
+        })
+        self.assertEqual(operational_position(records)["available_cell_minutes"], 210)
+
+    async def test_equivalent_ready_instant_is_not_a_false_disagreement(self):
+        from decision_v2.contracts import ProductionFinding
+        runtime, state, workflow, events = await self.first_run("order-pull-forward-v2")
+        data = scoped_payload("production")
+        data["option_assessments"][1]["ready_at"] = "2026-10-15T23:00:00+00:00"
+        state.findings["production"] = ProductionFinding.model_validate_json(json.dumps(data))
+        self.assertFalse(review_reasons(state))
+
+    async def test_representative_compact_comparisons_fit_unchanged_request_budget(self):
+        service, base = MockFoundry(), MockFoundry()
+        def expand(request, body):
+            response = base(request)
+            if request.url.path.endswith("/chat/completions"):
+                payload = response.json()
+                message = payload["choices"][0]["message"]
+                if message.get("content"):
+                    data = json.loads(message["content"])
+                    if "option_assessments" in data:
+                        data.update(assessment="Evidence-backed comparison. " * 9,
+                                    implication="Advisory, not execution. " * 10)
+                        for assessment in data["option_assessments"]:
+                            assessment["assessment"] = "Documented option evidence. " * 6
+                        message["content"] = json.dumps(data)
+                        return httpx.Response(200, json=payload)
+            return response
+        service.override = expand
+        runtime, state, workflow, events = await self.first_run("order-pull-forward-v2", service)
+        self.assertEqual(runtime.budget.counts, {"gpt": 7, "decision": 3})
+        self.assertFalse(any(event.type == "request_info" for event in events))
+
+    async def test_new_provider_schemas_exclude_unsupported_constraints(self):
+        await self.first_run("order-pull-forward-v2")
+        forbidden = {"format", "minLength", "maxLength", "minimum", "maximum", "minItems", "maxItems"}
+        def check(node):
+            if isinstance(node, dict):
+                self.assertFalse(forbidden.intersection(node), forbidden.intersection(node))
+                for value in node.values():
+                    check(value)
+            elif isinstance(node, list):
+                for value in node:
+                    check(value)
+        for request, body in self.service.requests:
+            if "response_format" in body:
+                schema = body["response_format"]["json_schema"]
+                if schema["name"] != "CoordinatedProposal":
+                    check(schema["schema"])
+
+
 class RoleInstructionTests(unittest.IsolatedAsyncioTestCase):
     make_runtime = FrameworkAgentTests.make_runtime
     first_run = ScenarioTests.first_run
@@ -1424,14 +1714,15 @@ class RoleInstructionTests(unittest.IsolatedAsyncioTestCase):
                 prompt = prompts[actor]
                 for phrase in phrases:
                     self.assertIn(phrase, prompt)
-                for phrase in ("selected_option_id", "required_unknown_keys", "previous_conflicts",
+                for phrase in ("preferred_option_id", "required_unknown_keys", "previous_conflicts",
                                "untrusted", "unverified", "under 300 characters", "1200"):
                     self.assertIn(phrase, prompt)
                 self.assertNotIn("finding_refs", prompt)
                 self.assertNotIn("containment_required=true", prompt)
                 self.assertIn("allowlisted", prompt)
         coordinator = prompts["coordinator"]
-        for phrase in ("finding_refs", "unscoped", "unsupported", "weights", "same option"):
+        for phrase in ("finding_refs", "matching", "Unsupported", "weights", "option_id",
+                       "safety_approval_requests"):
             self.assertIn(phrase, coordinator)
         self.assertIn("no tools", coordinator.lower())
         self.assertEqual(runtime.budget.counts, {"gpt": 7, "decision": 3})
@@ -1462,12 +1753,19 @@ class RoleInstructionTests(unittest.IsolatedAsyncioTestCase):
             prompt = " ".join(str(m["content"]) for m in body["messages"]
                               if m["role"] in ("system", "developer"))
             if data["actor"] == "coordinator":
-                for phrase in ("logical OR", "proposal_feedback", "not endorsement"):
+                for phrase in ("matching", "proposal_feedback", "not endorsement"):
                     self.assertIn(phrase, prompt)
             else:
-                for phrase in ("expedited=true", "service_kind", "approved_alternative",
-                               "freight_authority", "exceeds", "conditional"):
-                    self.assertIn(phrase, prompt)
+                if data["actor"] == "supply-chain":
+                    for phrase in ("expedited=true", "service_kind", "approved_alternative"):
+                        self.assertIn(phrase, prompt)
+                    self.assertNotIn('"requires_overtime"', json.dumps(body["response_format"]))
+                elif data["actor"] == "production":
+                    self.assertIn("packing", prompt)
+                    self.assertNotIn('"freight_authority"', json.dumps(body["response_format"]))
+                else:
+                    self.assertIn("authority gap", prompt)
+                    self.assertNotIn('"displaces_other_orders"', json.dumps(body["response_format"]))
                 self.assertNotIn("logical OR", prompt)
 
 
