@@ -113,6 +113,26 @@ to distinguish nonapplicable fields from missing evidence without assigning
 roles. Role actions/dependencies may need assessment even with complete facts.
 Raw choice/probability remains distinct from effective host routing.
 
+The subsequent user-approved routing-framing revision supplies one reusable
+canonical context to both overall and role questions: decision_status/objective,
+observed record references/authority/permissions, calculated_feasibility and
+unresolved_preferences. Complete raw supporting records remain available once
+in fixture; nonquality overall routing no longer duplicates the same calculated
+constraints in a second field. Quality's independent authoritative hold/
+containment constraints remain supplied.
+
+Pull-forward's objective is explicitly choosing still-unselected full-early
+versus split-standard. Both are permitted for planning; full avoids a second
+receipt, but no monetary value for that preference is supplied. Feasibility
+is not a completed choice; neither1800 nor0 exceeds2500 authority. Production
+has its real cell choice and carrier its resolved recovery record. Role questions
+ask material contribution to the open decision, not whether facts are missing.
+Neutral domain responsibilities do not assign roles or an expected count.
+Actual model choices,70%/unique-highest policy, conservative consultation,
+no-assessment semantics, fixtures, safeguards and call ceilings are unchanged.
+Contradictory GPT approvals/dependencies are a separate reasoning issue, not
+automatically normalized by the routing formatter.
+
 ## User-directed synthetic case
 
 Freeze a Thursday2026-10-15 14:00 UTC-05:00 snapshot. Fictional Tier-2 stamped

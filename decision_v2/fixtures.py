@@ -586,21 +586,74 @@ def operational_position(records):
 
 def routing_context(scenario_id: ScenarioId):
     records = fixture_records(scenario_id)
+    policy = records["read_approval_policy"]
     context = {
         "source": "derived_synthetic_fixture",
-        "checks": operational_checks(records),
-        "applicability": {
-            "qualified_cell": records["read_build"].production_units > 0,
-            "customer_pull_forward_request": scenario_id == "order-pull-forward-v2",
+        "decision_status": {},
+        "observed_records": {
+            "evidence_ids": [record.evidence_id for record in records.values()],
+            "planner_limit_usd": policy.planner_limit_usd,
+            "source": "synthetic_fixture",
         },
+        "unresolved_preferences": {},
         "known_unknowns_by_role": {
             actor: sorted(domain_unknowns(actor, scenario_id)) for actor in ALLOWLIST
         },
+        "no_execution_authority": True,
     }
-    if records["read_build"].options:
-        context["unselected_options"] = operational_options(records)
+    if scenario_id == SCENARIO_ID:
+        position = delivery_position()
+        context["decision_status"] = {
+            "state": "business_questions_open", "selected_option_id": None, "alternative_ids": [],
+            "objective": "Assess shipped-lot containment and delivery recovery separately; business questions remain open.",
+        }
+        context["observed_records"]["hold_cannot_be_lifted_by_demo"] = True
+        context["calculated_feasibility"] = {
+            "baseline_delivery_shortfall": position.baseline_gap,
+            "scheduled_units": position.total_demand, "released_units": position.released_units,
+        }
+        return context
+    build = records["read_build"]
+    checks = operational_checks(records)
+    context["applicability"] = {
+        "qualified_cell": build.production_units > 0,
+        "customer_pull_forward_request": scenario_id == "order-pull-forward-v2",
+    }
+    context["calculated_feasibility"] = {"checks": checks}
+    if build.options:
+        context["calculated_feasibility"]["unselected_options"] = operational_options(records)
+        context["decision_status"] = {
+            "state": "choice_required", "selected_option_id": None,
+            "alternative_ids": [option.option_id for option in build.options],
+            "objective": "Choose between qualified cells: compare setup effort, processing time and readiness margin. "
+                         "Material allocation, transport and customer windows are fixed for either choice.",
+        }
+        if scenario_id == "order-pull-forward-v2":
+            context["decision_status"]["objective"] = (
+                "Choose full-early versus split-standard; neither has been selected. Balance customer receipt "
+                "preference, incremental freight and shared production/readiness/other-order reservations. "
+                "Feasibility being established does not make this tradeoff decision complete."
+            )
+            context["observed_records"]["customer_planning_permission"] = {
+                "reference": policy.customer_request_reference,
+                "permitted_option_ids": [option.option_id for option in policy.customer_delivery_options],
+                "stated_preference": "Full early supply to avoid a second lineside receipt; split is permitted for planning.",
+            }
+            context["unresolved_preferences"] = {
+                "second_receipt_monetary_value_usd": None,
+                "decision_question": "How to weigh the recorded receipt preference against incremental freight.",
+                "not_a_mandatory_missing_approval": True,
+            }
     else:
-        context["position"] = operational_position(records)
+        shipment = records["read_shipment"]
+        resolved = all(checks.values()) and shipment.approved_carrier and shipment.freight_cost_usd <= policy.planner_limit_usd
+        context["calculated_feasibility"]["position"] = operational_position(records)
+        context["decision_status"] = {
+            "state": "resolved_record" if resolved else "business_questions_open",
+            "selected_option_id": None, "alternative_ids": [],
+            "objective": ("Review established recovery facts; no outstanding alternative choice is supplied."
+                          if resolved else "Assess unsupported recovery evidence and required owner handoffs."),
+        }
     return context
 
 

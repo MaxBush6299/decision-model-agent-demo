@@ -993,7 +993,7 @@ class ScenarioTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn("pickup_at", context["fixture"]["read_shipment"])
             payload = next(body for request, body in self.service.requests
                            if "production_needed" in body.get("questions", {}))
-            self.assertEqual(len(payload["state"]["routing_context"]["unselected_options"]), 2)
+            self.assertEqual(len(payload["state"]["routing_context"]["calculated_feasibility"]["unselected_options"]), 2)
             for actor in AGENTS:
                 self.assertEqual(self.runtime.budget.tools[(actor, 0)], set(ALLOWLIST[actor]))
             build_id = fixture_records(scenario)["read_build"].evidence_id
@@ -1404,6 +1404,63 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
     make_runtime = FrameworkAgentTests.make_runtime
     first_run = ScenarioTests.first_run
 
+    async def test_routing_payload_separates_unmade_choice_from_complete_feasibility(self):
+        runtime = self.make_runtime(scenario_id="order-pull-forward-v2")
+        decision, state = DecisionClient(runtime), RunState(scenario_id="order-pull-forward-v2")
+        await decision.assess_need(state)
+        await decision.select(state)
+        contexts = [body["state"] for _, body in self.service.requests]
+        self.assertIn("routing_context", contexts[0])
+        self.assertEqual(contexts[0]["routing_context"], contexts[1]["routing_context"])
+        for context in contexts:
+            framing = context["routing_context"]
+            self.assertEqual(framing["decision_status"]["state"], "choice_required")
+            self.assertIsNone(framing["decision_status"]["selected_option_id"])
+            self.assertEqual(framing["decision_status"]["alternative_ids"], ["full-early", "split-standard"])
+            self.assertEqual(framing["observed_records"]["planner_limit_usd"], 2500)
+            self.assertEqual(framing["unresolved_preferences"]["second_receipt_monetary_value_usd"], None)
+            options = framing["calculated_feasibility"]["unselected_options"]
+            self.assertEqual(options["full-early"]["freight_total_usd"], 1800)
+            self.assertEqual(options["split-standard"]["freight_total_usd"], 0)
+            self.assertEqual(options["full-early"]["leg_quantities"], [400])
+            self.assertEqual(options["split-standard"]["leg_quantities"], [160, 240])
+            self.assertTrue(all(framing["calculated_feasibility"]["checks"].values()))
+            self.assertEqual(context["fixture"]["read_inventory"]["materials_reserved_other_orders"], 200)
+            self.assertEqual(context["fixture"]["read_build"]["other_orders"][0]["quantity"], 200)
+            self.assertEqual(len(context["fixture"]), 4)
+            for key in ("expected_specialists", "expected_count", "preferred_option_id"):
+                self.assertNotIn(key, json.dumps(context))
+        self.assertEqual((runtime.budget.counts["decision"], runtime.budget.counts["gpt"]), (2, 0))
+
+    async def test_role_question_asks_material_choice_contribution_not_missing_facts(self):
+        runtime = self.make_runtime(scenario_id="order-pull-forward-v2")
+        await DecisionClient(runtime).select(RunState(scenario_id="order-pull-forward-v2"))
+        questions = self.service.requests[0][1]["questions"]
+        self.assertEqual(set(questions), {"supply_chain_needed", "production_needed", "commercial_needed"})
+        for question in questions.values():
+            self.assertIn("contribute material analysis", question["instructions"])
+            self.assertIn("choosing between", question["instructions"])
+            self.assertIn("complete", question["criteria"]["needed"])
+            self.assertIn("no material contribution", question["criteria"]["not_needed"])
+        self.assertIn("receipt preference", questions["commercial_needed"]["instructions"])
+        self.assertIn("reservations", questions["production_needed"]["instructions"])
+        self.assertIn("dispatch", questions["supply_chain_needed"]["instructions"])
+
+    async def test_same_formatter_preserves_resolved_carrier_cell_choice_and_quality_open_questions(self):
+        from decision_v2.fixtures import routing_context
+        carrier = routing_context("carrier-delay-v2")
+        self.assertEqual(carrier["decision_status"]["state"], "resolved_record")
+        self.assertEqual(carrier["decision_status"]["alternative_ids"], [])
+        self.assertEqual(carrier["calculated_feasibility"]["position"]["arrival_at"], "2026-10-16T09:30:00-05:00")
+        production = routing_context("production-resequence-v2")
+        self.assertEqual(production["decision_status"]["alternative_ids"], ["cell-p2", "cell-p3"])
+        self.assertEqual(production["calculated_feasibility"]["unselected_options"]["cell-p3"]["position"]["production_minutes"], 250)
+        quality = routing_context(SCENARIO_ID)
+        self.assertEqual(quality["decision_status"]["state"], "business_questions_open")
+        self.assertTrue(quality["observed_records"]["hold_cannot_be_lifted_by_demo"])
+        self.assertEqual(quality["calculated_feasibility"]["baseline_delivery_shortfall"], 240)
+        self.assertIn("shipment_arrival", quality["known_unknowns_by_role"]["supply-chain"])
+
     async def test_reported_carrier_choices_consult_uncertain_roles_without_human_routing_question(self):
         service = MockFoundry()
         # Only rounded chosen scores/confidences were supplied; residuals below are synthetic.
@@ -1605,12 +1662,12 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         context = body["state"]["routing_context"]
         self.assertEqual(context["applicability"], {"qualified_cell": False, "customer_pull_forward_request": False})
         self.assertEqual(context["known_unknowns_by_role"], {"supply-chain": [], "production": [], "commercial": []})
-        self.assertEqual(context["position"]["arrival_at"], "2026-10-16T09:30:00-05:00")
-        self.assertTrue(all(context["checks"].values()))
+        self.assertEqual(context["calculated_feasibility"]["position"]["arrival_at"], "2026-10-16T09:30:00-05:00")
+        self.assertTrue(all(context["calculated_feasibility"]["checks"].values()))
         self.assertNotIn("selections", context)
         self.assertNotIn("needed", context)
         for question in body["questions"].values():
-            self.assertIn("distinct", question["criteria"]["needed"])
+            self.assertIn("distinct", question["criteria"]["needed"].lower())
             self.assertIn("already established", question["criteria"]["not_needed"])
 
     async def test_routing_context_keeps_applicable_missing_evidence(self):
@@ -1628,7 +1685,7 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
             await DecisionClient(runtime).select(RunState(scenario_id="production-resequence-v2"))
         context = self.service.requests[0][1]["state"]["routing_context"]
         self.assertTrue(context["applicability"]["qualified_cell"])
-        self.assertFalse(context["checks"]["qualified_cell"])
+        self.assertFalse(context["calculated_feasibility"]["checks"]["qualified_cell"])
         self.assertEqual(context["known_unknowns_by_role"]["production"], ["qualified_cell"])
 
     def test_selection_display_separates_raw_not_needed_from_effective_uncertainty(self):

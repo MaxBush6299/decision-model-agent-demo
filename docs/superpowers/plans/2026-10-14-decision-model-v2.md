@@ -391,3 +391,33 @@ consistency and diff checks pass. Customer full/split records include independen
 window starts as well as due times; shifted carrier windows cannot authorize an
 early delivery. No additional live runs occurred after the authentication stop.
 Final-code live validation remains explicitly blocked, not marked successful.
+
+## User-directed routing evidence/question framing
+
+- [x] Add a canonical per-case decision_status/objective, observed record summary,
+  calculated feasibility and unresolved preference framing. Keep complete
+  supporting records, authority, safety constraints and source references.
+  Use the same formatter for overall assessment and role selection; no extra
+  model summary, fixture changes or preferred answer.
+- [x] Ask independent role questions about material contribution to choosing
+  alternatives, even with complete evidence. Preserve actual choices,
+  thresholds, conservative consultation and no-assessment/quality semantics.
+- [x] Exercise emitted assessment/selection payloads, full/split quantities/
+  costs/preferences, missing-versus-nonapplicable evidence and all-case branches.
+  Offline preflight:143 tests (34 v1,109 v2) pass.
+- [x] Run Pull-forward once and Production once as a focused routing regression,
+  within the two-run authorization. Record raw/effective routing separately
+  from GPT numerical/dependency/approval quality; never rerun to chase counts.
+  Pull-forward: all3 raw needed98.4/72.5/99.2%, not conservative fallbacks;
+ 3D1+7GPT/6tools,192.9s, full-early selected, pending after Needs revision58.2%
+  and model-requested freight review. Production: Production needed99.4%,
+  other roles confidently skipped; P2 selected, validation96.3%, advisory
+  complete,3D1+3GPT/2tools,121.1s.
+- [x] Preserve and report independent GPT issues: false/contradictory overtime
+  in the Pull-forward Production finding and freight authority requests despite
+  1800<2500. No automatic flag normalization, prompt retuning or extra live run.
+  Production's "optimal"/margin-risk prose is stronger than a proved optimum.
+- [x] Record actual live outcomes/limitations, final143-test acceptance,
+  CLI/dependency/diff checks and local commit. Only routing context/questions,
+  tests and directly related docs change; fixtures/thresholds/model choices,
+  v1/site/dependencies/Azure remain untouched.
