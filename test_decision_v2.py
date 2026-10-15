@@ -1453,6 +1453,23 @@ class RoleInstructionTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any(event.type == "request_info" for event in events))
         self.assertIn("quality_containment", state.policies)
 
+    async def test_shipment_flag_audit_and_join_precedence_reach_the_correct_actors(self):
+        await self.first_run("order-pull-forward-v2")
+        for request, body in self.service.requests:
+            if not request.url.path.endswith("/chat/completions"):
+                continue
+            data = json.loads(next(m["content"] for m in body["messages"] if m["role"] == "user"))
+            prompt = " ".join(str(m["content"]) for m in body["messages"]
+                              if m["role"] in ("system", "developer"))
+            if data["actor"] == "coordinator":
+                for phrase in ("logical OR", "proposal_feedback", "not endorsement"):
+                    self.assertIn(phrase, prompt)
+            else:
+                for phrase in ("expedited=true", "service_kind", "approved_alternative",
+                               "freight_authority", "exceeds", "conditional"):
+                    self.assertIn(phrase, prompt)
+                self.assertNotIn("logical OR", prompt)
+
 
 class RoutingTests(unittest.IsolatedAsyncioTestCase):
     make_runtime = FrameworkAgentTests.make_runtime

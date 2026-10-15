@@ -54,6 +54,15 @@ subtract reserved work once; this last wording is offline-only verified.
 See `docs/v2.md` for the actual results and limits; additional instructions are
 not evidence of reliable model reasoning or a validated plan.
 
+The user separately authorized a focused field-audit correction and one further
+live Pull-forward test. Guidance now maps shipment flags to the chosen legs,
+checks actual freight authority gaps across roles and makes Coordinator
+logical-OR/union preservation precedence explicit. Existing schemas, policies
+and guards are unchanged. That additional live run also stopped on omitted
+expedited-freight preservation, with residual approval, displacement and
+arithmetic contradictions. Its2 D1/7 GPT/6 tool calls took369.4s under token
+pacing. No additional run or live-readiness claim is authorized by this result.
+
 ## Additional approved synthetic cases
 
 Same Thursday14:00 snapshot, part MB-217 and fictional Tier-1 context:

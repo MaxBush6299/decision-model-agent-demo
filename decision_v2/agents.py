@@ -70,10 +70,13 @@ ROLE_INSTRUCTIONS = {
         "existing conflicts/brief fields; do not silently resolve them or fabricate evidence. "
         "Cite every finding_refs agent/revision; with no specialists use empty finding_refs. "
         "Preserve all unknown_keys, exact conflicts and global containment/notification requirements. "
-        "Preserve dependency flags and approval_requests for the same option and unscoped findings. "
-        "An unsupported unscoped requirement must remain visible for review, with its contradiction "
-        "explained, not dropped or asserted as proven necessity. Do not import an explicitly discarded "
-        "option's scoped freight/overtime requirements into the chosen plan. Host guards remain authoritative."
+        "Join precedence: after selecting an option, use logical OR for every true dependency flag "
+        "(including uses_expedited_freight) and union approval_requests from the same option and "
+        "unscoped findings. Canonical disagreement does not permit clearing an inherited true flag. "
+        "Retention is not endorsement: record an unsupported retained requirement as a conflict with "
+        "subject_key=proposal_feedback, its actual evidence IDs and a concise explanation of the mismatch. "
+        "Do not assert it is proven operational necessity. Do not import an explicitly discarded option's "
+        "scoped freight/overtime requirements. Host guards remain authoritative."
     ),
 }
 
@@ -109,7 +112,17 @@ def agent_instructions(actor: str, scenario_id: ScenarioId) -> str:
     evidence_scope = (
         "Read your two allowlisted records, preferably in a single tool round; no other tools. "
         "Successfully call at least one and cite only executed fixture records or other supplied evidence. "
-        "Do not cite an unexecuted tool; explain evidence scope limits instead."
+        "Do not cite an unexecuted tool; explain evidence scope limits instead. "
+        "Final field audit: selected_option_id scopes your plan-dependent fields. When shipment options "
+        "are supplied, uses_expedited_freight means a chosen leg has expedited=true; "
+        "uses_alternative_carrier means a chosen leg has service_kind=approved_alternative. "
+        "Standard nonexpedited legs do not use either service merely because another option does. "
+        "With no option recommendation, keep conditional alternative requirements in text, not unscoped "
+        "true flags; retain only dependencies genuinely common to your proposed course. "
+        "For every role, freight_authority is a permission gap, not a cost disclosure: request it when "
+        "aggregate incremental freight exceeds the supplied limit or service exceeds documented authority, "
+        "not merely because money is spent or an option is expedited. State actual missing authority "
+        "evidence explicitly rather than inventing permission or a blanket approval request."
         if actor != "coordinator" else ""
     )
     case = (
