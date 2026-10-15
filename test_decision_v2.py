@@ -127,6 +127,26 @@ class OptionContractTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             ProductionFinding.model_validate_json(json.dumps(data))
 
+    def test_scoped_prose_uses_legacy_500_character_bound_without_truncation(self):
+        from decision_v2.contracts import SupplyFinding
+        data = scoped_payload("supply-chain")
+        data["assessment"] = "A" * 500
+        data["implication"] = "B" * 500
+        for assessment in data["option_assessments"]:
+            assessment["assessment"] = "C" * 500
+        try:
+            finding = SupplyFinding.model_validate_json(json.dumps(data))
+        except ValidationError as exc:
+            self.fail(f"Legacy-bounded scoped prose must remain valid: {exc}")
+        self.assertEqual(finding.model_dump(), data)
+        for target, key in ((data, "assessment"), (data, "implication"),
+                            (data["option_assessments"][0], "assessment")):
+            previous = target[key]
+            target[key] = "D" * 501
+            with self.subTest(key=key), self.assertRaises(ValidationError):
+                SupplyFinding.model_validate_json(json.dumps(data))
+            target[key] = previous
+
 
 class OptionPresentationTests(unittest.TestCase):
     def test_comparison_shows_both_options_and_unknown_without_fake_selection(self):

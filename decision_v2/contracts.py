@@ -167,7 +167,7 @@ class ExpertFinding(PlanDependencies):
 
 class OptionEvidence(StrictModel):
     option_id: Annotated[str, Field(min_length=1, max_length=64)]
-    assessment: Annotated[str, Field(min_length=1, max_length=200)]
+    assessment: Annotated[str, Field(min_length=1, max_length=500)]
     evidence_ids: list[EvidenceId] = Field(min_length=1, max_length=12)
 
 
@@ -196,8 +196,8 @@ class CommercialOptionAssessment(OptionEvidence):
 
 class ScopedFindingBase(StrictModel):
     revision: Literal[0, 1]
-    assessment: Annotated[str, Field(min_length=1, max_length=300)]
-    implication: Annotated[str, Field(min_length=1, max_length=300)]
+    assessment: Annotated[str, Field(min_length=1, max_length=500)]
+    implication: Annotated[str, Field(min_length=1, max_length=500)]
     preferred_option_id: Annotated[str, Field(min_length=1, max_length=64)] | None = None
     uses_held_stock: bool
     containment_required: bool
