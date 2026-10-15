@@ -14,9 +14,12 @@ surface incorrect/unknown claims without rewriting them.
 Foundry/Entra adapters; standard-library unittest and existing fake transport.
 
 **Execution status:** All three tasks completed inline with test-first contract,
-framework and presentation coverage;162 offline tests pass. New finding wire
+framework and presentation coverage;163 offline tests pass. New finding wire
 schemas exclude unsupported Foundry keywords while local validation retains
-bounds/aware timestamps. No new live inference; acceptance remains pending.
+bounds/aware timestamps. Subsequent explicit approvals covered one contract live
+test, then the500-character prose-bound fix and one further live test. The latter
+reached final validation but retained business contradictions; live acceptance
+is not achieved. Full observations are recorded in `docs\v2.md`.
 
 ## Global Constraints
 

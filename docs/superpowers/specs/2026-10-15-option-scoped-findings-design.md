@@ -1,7 +1,7 @@
 # Role-specific, option-scoped findings
 
 **Status:** Written specification approved; implemented and verified offline.
-Live acceptance remains pending separate authorization.
+Separately authorized live tests completed, but live acceptance is not achieved.
 
 The user approved focused output-contract changes after two instruction-only
 live tests failed, then selected role-specific, per-option findings. Further
@@ -52,6 +52,12 @@ default. Claims remain model-generated and subject to canonical disagreement
 checks. Other-domain limitations belong in the explanation, not fabricated
 claims. New contracts reject fields owned by another role.
 No action, preference or finding grants execution/customer/spending authority.
+
+After an authorized live response exceeded the new300/200-character prose caps,
+the user approved aligning specialist text fields with the existing500-character
+legacy bound. Concision targets remain300 overall/200 per option; the hard bound
+is500 without truncation. The1,200-token ceiling and all non-prose constraints
+remain unchanged.
 
 Global uncertainty/conflict preservation remains unchanged. Safety claims
 such as held-stock use or containment remain explicit at finding level and
@@ -132,8 +138,12 @@ separately approved bounded live test confirms actual model behavior; no claim
 of stable routes, calibrated confidence, operational safety or guaranteed
 success follows from changing the contract.
 
-Implementation verification:162 offline tests cover v1/v2, including actual
+Implementation verification:163 offline tests cover v1/v2, including actual
 framework transport boundaries and representative compact join request sizing.
-CLI/help, installed-package consistency and diff checks also pass. No new live
-call was made; previous instruction-only failures remain unresolved acceptance
-evidence until an authorized test exercises this revision.
+CLI/help, installed-package consistency and diff checks also pass. Two later,
+separately authorized contract tests were performed: the first stopped on prose
+bounds; after the explicitly approved fix, the second reached final validation
+and returned pending review. Scope/joins held, but Production numeric/time errors,
+Commercial unknowns/unsupported authority requests and Coordinator contradictions
+prevent live readiness. See `docs\v2.md` for exact observations. No additional
+test is authorized by this specification.
