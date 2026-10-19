@@ -395,3 +395,17 @@ Then consume exactly the remaining newly authorized live run as run7, recording
 actual Coordinator/conflicts/final Decision-1 results without repairs or a
 readiness claim unless full acceptance passes. No changes during or after run7
 other than persisting sanitized observations; no push.
+
+Run7 on `865f056` dispatched Coordinator successfully and reached final Decision-1;
+all10 service requests HTTP200 and all7 GPT responses completed. All specialists
+passed owned-unknown checks. Supply nevertheless raised material_allocation /
+shipment_arrival; Production repeated the packing-readiness/cell-occupancy
+confusion, with null overtime/displacement claims for both options and a raw
+reservation-overlap conflict. Coordinator selected split-standard, retained both
+unknowns and all5 conflicts (raw1 plus sourced4), and kept operational approvals
+empty. It still adopted the unsupported overlap in prose. Decision-1 scored
+Addresses the issue78.5180%, but mandatory host review correctly stayed pending /
+exit2; no human evidence was fabricated. Attempts3 Decision-1 /7 GPT,6 tools,
+379.062s. GPT18,200 input /4,140 output tokens; actual billed dollars unavailable.
+Acceptance is not achieved. Both additional runs are consumed; no changes beyond
+observation docs or further inference followed, and no live authorization remains.
