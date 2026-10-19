@@ -248,3 +248,16 @@ was produced.176 offline tests had passed, but cannot establish provider-specifi
 compatibility. No subsequent code/prompt/schema change or extra inference was
 made; four unused runs were not spent on an identical request. Luna remains
 blocked pending a separately approved compatibility change, not business-ready.
+
+The user subsequently explicitly approved moving Luna to Responses while
+retaining reasoning and guards. Use the installed `OpenAIChatClient`, verified
+against Microsoft Learn's current framework integration reference, rather than
+the older `OpenAIResponsesClient` name absent from this installed package.
+For Luna only, allow `/openai/v1/responses`, emit `reasoning.effort=low` and
+`max_output_tokens=1200`, and check native completed function/message output
+before parsing/execution. Keep `store=False` and encrypted stateless reasoning
+replay, with no hosted tools or server conversation IDs. Reject incomplete,
+refused/failed/malformed output explicitly. Include replay/output allowance in
+the same10,000TPM pacing; retain all role tools/caps, schemas, prompts, source
+guards, Entra credentials and Decision-1/default Chat Completions behavior.
+Resume the existing bounded live allowance only after offline verification.

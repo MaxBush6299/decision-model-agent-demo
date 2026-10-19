@@ -131,7 +131,7 @@ class Budget:
         body = json.loads(request_body)
         # Conservative local estimate includes schemas/tools and the full output allowance.
         estimate = (len(request_body) + 2) // 3 + body.get(
-            "max_completion_tokens", body.get("max_tokens", 1200),
+            "max_output_tokens", body.get("max_completion_tokens", body.get("max_tokens", 1200)),
         )
         if estimate > 10000:
             raise DemoError("GPT request exceeds the demo's conservative 10,000-token minute budget.")
@@ -218,7 +218,9 @@ class GuardedTransport(httpx.AsyncBaseTransport):
         if call is None:
             raise DemoError("Unbound model request blocked.")
         kind, actor, revision = call
-        path = "/openai/v1/chat/completions" if kind == "gpt" else "/providers/microsoft/v1/systemone"
+        gpt_path = ("/openai/v1/responses" if self.config.llm_profile == "gpt-6-luna"
+                    else "/openai/v1/chat/completions")
+        path = gpt_path if kind == "gpt" else "/providers/microsoft/v1/systemone"
         if request.method != "POST" or str(request.url) != self.config.endpoint + path:
             raise DemoError("Model request outside the configured Azure Foundry endpoint blocked.")
         token_estimate = await self.budget.pace_tokens(request.content) if kind == "gpt" else None
@@ -245,6 +247,9 @@ class GuardedTransport(httpx.AsyncBaseTransport):
             payload = response.json()
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise DemoError("GPT returned invalid JSON.") from exc
+        if self.config.llm_profile == "gpt-6-luna":
+            self.check_response(payload, actor, revision)
+            return
         choices = payload.get("choices") if isinstance(payload, dict) else None
         if not isinstance(choices, list) or len(choices) != 1 or not isinstance(choices[0], dict):
             raise DemoError("GPT returned no single valid completion.")
@@ -264,18 +269,61 @@ class GuardedTransport(httpx.AsyncBaseTransport):
                 function = call.get("function") if isinstance(call, dict) else None
                 if not isinstance(function, dict) or call.get("type") != "function":
                     raise DemoError("Unsupported tool-call shape.")
-                if not isinstance(function.get("name"), str) or not function["name"]:
-                    raise DemoError("Fixture tool name must be a nonempty string.")
-                names.append(function["name"])
-                try:
-                    args = json.loads(function.get("arguments", ""))
-                except (json.JSONDecodeError, TypeError) as exc:
-                    raise DemoError("Fixture tool arguments are not valid JSON.") from exc
-                if args != {"scenario_id": self.scenario_id}:
-                    raise DemoError("Fixture tools accept only the fixed synthetic scenario.")
+                names.append(self.check_fixture_call(function.get("name"), function.get("arguments")))
             self.budget.check_tool_batch(names, actor, revision)
         elif calls or not isinstance(message.get("content"), str) or not message["content"].strip():
             raise DemoError("GPT returned empty or unresolved final output.")
+
+    def check_fixture_call(self, name, arguments):
+        if not isinstance(name, str) or not name:
+            raise DemoError("Fixture tool name must be a nonempty string.")
+        try:
+            args = json.loads(arguments)
+        except (json.JSONDecodeError, TypeError) as exc:
+            raise DemoError("Fixture tool arguments are not valid JSON.") from exc
+        if args != {"scenario_id": self.scenario_id}:
+            raise DemoError("Fixture tools accept only the fixed synthetic scenario.")
+        return name
+
+    def check_response(self, payload, actor, revision):
+        if (
+            not isinstance(payload, dict) or payload.get("status") != "completed"
+            or payload.get("error") is not None or payload.get("incomplete_details") is not None
+        ):
+            raise DemoError("GPT Responses failed, refused, filtered, truncated, or returned malformed output.")
+        output = payload.get("output")
+        if not isinstance(output, list) or not output:
+            raise DemoError("GPT Responses returned no output.")
+        names, call_ids, messages = [], set(), []
+        for item in output:
+            if not isinstance(item, dict):
+                raise DemoError("GPT Responses returned malformed output.")
+            if item.get("type") == "reasoning":
+                continue
+            if item.get("type") == "function_call" and item.get("status") == "completed":
+                call_id = item.get("call_id")
+                if not isinstance(call_id, str) or not call_id.strip() or call_id in call_ids:
+                    raise DemoError("GPT Responses returned an invalid or duplicate function call ID.")
+                call_ids.add(call_id)
+                names.append(self.check_fixture_call(item.get("name"), item.get("arguments")))
+            elif (item.get("type") == "message" and item.get("role") == "assistant"
+                  and item.get("status") == "completed"):
+                content = item.get("content")
+                if not isinstance(content, list) or not content:
+                    raise DemoError("GPT Responses returned empty message content.")
+                for part in content:
+                    if (
+                        not isinstance(part, dict) or part.get("type") != "output_text"
+                        or not isinstance(part.get("text"), str) or not part["text"].strip()
+                    ):
+                        raise DemoError("GPT Responses refused or returned malformed message content.")
+                messages.append(item)
+            else:
+                raise DemoError("Unsupported GPT Responses output/tool type blocked.")
+        if len(messages) > 1 or (not names and not messages):
+            raise DemoError("GPT Responses returned no single resolved final output.")
+        if names:
+            self.budget.check_tool_batch(names, actor, revision)
 
     async def aclose(self):
         await self.inner.aclose()

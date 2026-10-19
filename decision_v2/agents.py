@@ -5,7 +5,7 @@ from agent_framework import (
     Agent, AgentFrameworkException, Content, FunctionInvocationContext,
     FunctionMiddleware, MiddlewareFailure, tool,
 )
-from agent_framework.openai import OpenAIChatCompletionClient
+from agent_framework.openai import OpenAIChatClient, OpenAIChatCompletionClient
 from azure.core.exceptions import ClientAuthenticationError
 from openai import OpenAIError
 from pydantic import BaseModel, ValidationError
@@ -144,7 +144,9 @@ class ExpertTeam:
                               lambda: set(budget.tools[(actor, state.revision)]))
                  for name in ALLOWLIST.get(actor, ())]
         middleware = [FixtureGuard(self.runtime, state, actor)] if tools else []
-        provider = OpenAIChatCompletionClient(
+        client_type = (OpenAIChatClient if self.runtime.config.llm_profile == "gpt-6-luna"
+                       else OpenAIChatCompletionClient)
+        provider = client_type(
             model=self.runtime.config.llm_deployment,
             async_client=self.runtime.sdks[actor],
             middleware=middleware,
@@ -209,7 +211,7 @@ class ExpertTeam:
                     options={
                         "response_format": output_type, "max_tokens": 1200,
                         "store": False,
-                        **({"reasoning_effort": "low"}
+                        **({"reasoning": {"effort": "low"}}
                            if self.runtime.config.llm_profile == "gpt-6-luna"
                            else {"temperature": .2}),
                     },

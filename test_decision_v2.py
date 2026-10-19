@@ -362,6 +362,54 @@ class ContractTests(unittest.TestCase):
 
 
 class RuntimeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_responses_tool_and_output_guards_reject_malformed_or_unauthorized_items(self):
+        call = {"type": "function_call", "status": "completed", "call_id": "call1",
+                "name": "read_build", "arguments": json.dumps({"scenario_id": SCENARIO_ID})}
+        valid = responses_payload({"content": "{}"})
+        invalid = [
+            {**valid, "status": "failed"}, {**valid, "error": {"message": "failed"}},
+            {**valid, "incomplete_details": {"reason": "content_filter"}},
+            {**valid, "output": []}, {**valid, "output": [None]},
+            {**valid, "output": [{"type": "reasoning"}]},
+            {**valid, "output": [{"type": "web_search_call", "status": "completed"}]},
+            {**valid, "output": [{**call, "name": "write_order"}]},
+            {**valid, "output": [{**call, "arguments": "{}"}]},
+            {**valid, "output": [{**call, "arguments": "not-json"}]},
+            {**valid, "output": [{**call, "arguments": None}]},
+            {**valid, "output": [{**call, "call_id": ""}]},
+            {**valid, "output": [call, call]},
+            {**valid, "output": [{**call, "status": "in_progress"}]},
+            {**valid, "output": valid["output"] * 2},
+        ]
+        for payload in invalid:
+            budget = Budget()
+            transport = GuardedTransport(
+                Config("https://example.services.ai.azure.com", "decision", "luna", "gpt-6-luna"),
+                budget, httpx.MockTransport(lambda request: httpx.Response(200)),
+            )
+            with self.subTest(payload=payload), self.assertRaises(DemoError):
+                transport.check_response(payload, "production", 0)
+            self.assertEqual(sum(map(len, budget.tools.values())), 0)
+
+    async def test_luna_transport_blocks_chat_path_and_paces_native_output_allowance(self):
+        config = Config("https://example.services.ai.azure.com", "decision", "luna", "gpt-6-luna")
+        budget = Budget()
+        seen = []
+        def service(request):
+            seen.append(request)
+            return httpx.Response(200, json=responses_payload({"content": "{}"}))
+        transport = GuardedTransport(config, budget, httpx.MockTransport(service))
+        body = {"max_output_tokens": 1200}
+        encoded = json.dumps(body).encode()
+        self.assertEqual(await budget.pace_tokens(encoded), (len(encoded) + 2) // 3 + 1200)
+        async with httpx.AsyncClient(transport=transport, trust_env=False) as client:
+            async with budget.stage("gpt", "coordinator", 0):
+                with self.assertRaises(DemoError):
+                    await client.post(config.endpoint + "/openai/v1/chat/completions", json=body)
+                await client.post(config.endpoint + "/openai/v1/responses", json=body)
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(budget.counts["gpt"], 1)
+
     async def test_specialist_fourth_attempt_blocked(self):
         budget = Budget()
         for _ in range(3):
@@ -587,9 +635,58 @@ class MockFoundry:
         return httpx.Response(200, json=completion({"content": json.dumps(output)}))
 
 
+def responses_payload(message, finish="stop"):
+    output = [{"id": "rs_offline", "type": "reasoning", "summary": [],
+               "encrypted_content": "OFFLINE_OPAQUE_REASONING"}]
+    if message.get("tool_calls"):
+        output.extend({
+            "id": "fc_" + call["id"], "type": "function_call", "status": "completed",
+            "call_id": call["id"], **call["function"],
+        } for call in message["tool_calls"])
+    else:
+        content = ([{"type": "refusal", "refusal": message["refusal"]}] if message.get("refusal")
+                   else [{"type": "output_text", "text": message.get("content", ""), "annotations": []}])
+        output.append({"id": "msg_offline", "type": "message", "status": "completed",
+                       "role": "assistant", "content": content})
+    return {
+        "id": "resp_offline", "object": "response", "created_at": 1, "model": "offline-luna",
+        "status": "incomplete" if finish == "length" else "completed",
+        "error": None, "incomplete_details": {"reason": "max_output_tokens"} if finish == "length" else None,
+        "output": output, "metadata": {}, "parallel_tool_calls": True, "tools": [],
+        "tool_choice": "auto", "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2,
+            "input_tokens_details": {"cached_tokens": 0}, "output_tokens_details": {"reasoning_tokens": 0}},
+    }
+
+
+class MockResponsesFoundry(MockFoundry):
+    """Native Responses wire fake sharing only the existing synthetic answer fixtures."""
+
+    def __call__(self, request):
+        if request.url.path.endswith("systemone"):
+            return super().__call__(request)
+        body = json.loads(request.content)
+        messages = []
+        for item in body["input"]:
+            if item.get("role") in ("user", "system", "developer"):
+                content = item["content"]
+                if isinstance(content, list):
+                    content = "".join(part["text"] for part in content)
+                messages.append({"role": item["role"], "content": content})
+            elif item.get("type") == "function_call_output":
+                messages.append({"role": "tool", "content": item["output"]})
+        fixture_request = httpx.Request("POST", request.url, json={"messages": messages},
+                                       headers=request.headers)
+        response = super().__call__(fixture_request)
+        self.requests[-1] = (request, body)
+        if not response.is_success:
+            return response
+        choice = response.json()["choices"][0]
+        return httpx.Response(200, json=responses_payload(choice["message"], choice["finish_reason"]))
+
+
 class FrameworkAgentTests(unittest.IsolatedAsyncioTestCase):
     def make_runtime(self, service=None, scenario_id=SCENARIO_ID, *, llm_profile="standard"):
-        self.service = service or MockFoundry()
+        self.service = service or (MockResponsesFoundry() if llm_profile == "gpt-6-luna" else MockFoundry())
         self.credential = FakeCredential()
         self.now = [0.]
         async def sleep(seconds):
@@ -618,18 +715,55 @@ class FrameworkAgentTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(body["model"], "decision-deployment")
                 self.assertNotIn("reasoning_effort", body)
                 continue
-            data = json.loads(next(message["content"] for message in body["messages"]
-                                   if message["role"] == "user"))
+            self.assertEqual(request.url.path, "/openai/v1/responses")
+            user = next(message["content"] for message in body["input"] if message.get("role") == "user")
+            data = json.loads(user if isinstance(user, str) else "".join(part["text"] for part in user))
             actors.add(data["actor"])
             self.assertEqual(body["model"], "gpt-deployment")
-            self.assertEqual(body["reasoning_effort"], "low")
-            self.assertEqual(body["max_completion_tokens"], 1200)
+            self.assertEqual(body["reasoning"], {"effort": "low"})
+            self.assertEqual(body["max_output_tokens"], 1200)
+            self.assertNotIn("max_completion_tokens", body)
+            self.assertNotIn("reasoning_effort", body)
             self.assertNotIn("max_tokens", body)
             self.assertNotIn("temperature", body)
             self.assertFalse(body["store"])
-            self.assertIn("json_schema", str(body["response_format"]))
+            self.assertNotIn("previous_response_id", body)
+            self.assertNotIn("conversation", body)
+            self.assertIn("reasoning.encrypted_content", body["include"])
+            self.assertIn("json_schema", str(body["text"]["format"]))
+            if any(item.get("type") == "function_call_output" for item in body["input"]):
+                self.assertTrue(any(item.get("type") == "reasoning"
+                                    and item.get("encrypted_content") == "OFFLINE_OPAQUE_REASONING"
+                                    for item in body["input"]))
         self.assertEqual(actors, {*AGENTS, "coordinator"})
         self.assertEqual(runtime.budget.counts, {"gpt": 7, "decision": 1})
+
+    async def test_luna_full_workflow_and_policy_remain_actual_framework_paths(self):
+        runtime = self.make_runtime(scenario_id="order-pull-forward-v2", llm_profile="gpt-6-luna")
+        result = await run_demo(runtime, trace=lambda message: None)
+        self.assertEqual(result.code, 0)
+        self.assertEqual(result.status, "advisory_complete")
+        self.assertEqual(result.proposal.selected_option_id, "split-standard")
+        self.assertEqual(runtime.budget.counts, {"gpt": 7, "decision": 3})
+        self.assertEqual(sum(map(len, runtime.budget.tools.values())), 6)
+
+    async def test_luna_refusal_incomplete_and_http_errors_stop_without_retry(self):
+        for status, message, finish in (
+            (401, {}, "stop"), (429, {}, "stop"), (500, {}, "stop"),
+            (200, {"content": None, "refusal": "No"}, "stop"),
+            (200, {"content": "{}"}, "length"),
+        ):
+            seen = []
+            def service(request):
+                seen.append(request)
+                return httpx.Response(status, json=responses_payload(message, finish))
+            runtime = self.make_runtime(service, scenario_id="order-pull-forward-v2",
+                                        llm_profile="gpt-6-luna")
+            state = RunState(scenario_id=runtime.scenario_id, evidence=initial_evidence(runtime.scenario_id))
+            with self.subTest(status=status, finish=finish), self.assertRaises(DemoError):
+                await ExpertTeam(runtime).assess("production", state)
+            self.assertEqual(len(seen), 1)
+            self.assertEqual(runtime.budget.counts["gpt"], 1)
 
     async def test_real_agent_tool_round_and_foundry_only_auth(self):
         with patch.dict("os.environ", {
