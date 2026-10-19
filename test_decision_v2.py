@@ -5,6 +5,7 @@ import time
 import contextlib
 import io
 import logging
+from types import SimpleNamespace
 from datetime import datetime
 from unittest.mock import patch
 from azure.core.credentials import AccessToken
@@ -338,6 +339,27 @@ class ContractTests(unittest.TestCase):
             with self.subTest(endpoint=endpoint), self.assertRaises(DemoError):
                 Config(endpoint, "decision", "gpt")
 
+    def test_optional_luna_profile_cli_env_and_unchanged_defaults(self):
+        args = SimpleNamespace(endpoint=None, decision_deployment=None, llm_deployment=None,
+                               llm_profile=None)
+        with patch.dict("os.environ", {
+            "FOUNDRY_ENDPOINT": "https://example.services.ai.azure.com",
+            "DECISION_DEPLOYMENT": "decision-gate", "LLM_DEPLOYMENT": "specialist-llm",
+        }, clear=True):
+            default = Config.from_args(args)
+            self.assertEqual((default.llm_deployment, default.llm_profile), ("specialist-llm", "standard"))
+            with patch.dict("os.environ", {"LLM_DEPLOYMENT": "specialist-llm-luna",
+                                          "LLM_PROFILE": "gpt-6-luna"}):
+                luna = Config.from_args(args)
+                self.assertEqual((luna.llm_deployment, luna.llm_profile),
+                                 ("specialist-llm-luna", "gpt-6-luna"))
+                args.llm_deployment, args.llm_profile = "custom-luna", "standard"
+                override = Config.from_args(args)
+                self.assertEqual((override.llm_deployment, override.llm_profile), ("custom-luna", "standard"))
+                self.assertEqual(override.decision_deployment, "decision-gate")
+        with self.assertRaises(DemoError):
+            Config("https://example.services.ai.azure.com", "decision", "gpt", "unknown")
+
 
 class RuntimeTests(unittest.IsolatedAsyncioTestCase):
     async def test_specialist_fourth_attempt_blocked(self):
@@ -566,20 +588,48 @@ class MockFoundry:
 
 
 class FrameworkAgentTests(unittest.IsolatedAsyncioTestCase):
-    def make_runtime(self, service=None, scenario_id=SCENARIO_ID):
+    def make_runtime(self, service=None, scenario_id=SCENARIO_ID, *, llm_profile="standard"):
         self.service = service or MockFoundry()
         self.credential = FakeCredential()
         self.now = [0.]
         async def sleep(seconds):
             self.now[0] += seconds
         self.runtime = AzureRuntime(
-            Config("https://example.services.ai.azure.com", "decision-deployment", "gpt-deployment"),
+            Config("https://example.services.ai.azure.com", "decision-deployment", "gpt-deployment", llm_profile),
             Budget(clock=lambda: self.now[0], sleep=sleep),
             credential=self.credential, transport=httpx.MockTransport(self.service),
             scenario_id=scenario_id,
         )
         self.addAsyncCleanup(self.runtime.aclose)
         return self.runtime
+
+    async def test_luna_profile_reaches_all_four_actual_framework_agents_and_not_decision(self):
+        runtime = self.make_runtime(scenario_id="order-pull-forward-v2", llm_profile="gpt-6-luna")
+        state = RunState(scenario_id=runtime.scenario_id, active=list(AGENTS),
+                         evidence=initial_evidence(runtime.scenario_id))
+        team = ExpertTeam(runtime)
+        for actor in state.active:
+            state.findings[actor] = await team.assess(actor, state)
+        state.proposal = await team.coordinate(state)
+        await DecisionClient(runtime).validate(state)
+        actors = set()
+        for request, body in self.service.requests:
+            if request.url.path.endswith("systemone"):
+                self.assertEqual(body["model"], "decision-deployment")
+                self.assertNotIn("reasoning_effort", body)
+                continue
+            data = json.loads(next(message["content"] for message in body["messages"]
+                                   if message["role"] == "user"))
+            actors.add(data["actor"])
+            self.assertEqual(body["model"], "gpt-deployment")
+            self.assertEqual(body["reasoning_effort"], "low")
+            self.assertEqual(body["max_completion_tokens"], 1200)
+            self.assertNotIn("max_tokens", body)
+            self.assertNotIn("temperature", body)
+            self.assertFalse(body["store"])
+            self.assertIn("json_schema", str(body["response_format"]))
+        self.assertEqual(actors, {*AGENTS, "coordinator"})
+        self.assertEqual(runtime.budget.counts, {"gpt": 7, "decision": 1})
 
     async def test_real_agent_tool_round_and_foundry_only_auth(self):
         with patch.dict("os.environ", {
@@ -609,6 +659,8 @@ class FrameworkAgentTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(body["model"], "decision-deployment" if request.url.path.endswith("systemone") else "gpt-deployment")
             if "messages" in body:
                 self.assertFalse(body["store"])
+                self.assertEqual(body["temperature"], .2)
+                self.assertNotIn("reasoning_effort", body)
                 self.assertIn("json_schema", str(body["response_format"]))
                 self.assertLessEqual(body.get("max_completion_tokens", body.get("max_tokens", 0)), 1200)
 

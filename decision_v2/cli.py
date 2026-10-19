@@ -223,6 +223,8 @@ async def run_demo(runtime: AzureRuntime, response_reader=read_terminal, trace=t
 
 async def live_run(config, verbose=False, scenario_id=SCENARIO_ID):
     terminal_trace("LIVE Azure Foundry inference | SYNTHETIC fixture tools | proposals only")
+    terminal_trace(f"GPT deployment={config.llm_deployment}; profile={config.llm_profile}; "
+                   "local pacing=10 RPM/10,000 estimated TPM; output allowance=1,200 tokens.")
     terminal_trace("At most one clarification; hard maximum 20 GPT +4 Decision-1 attempts, not expected runtime.")
     budget = Budget(terminal_trace)
     runtime = AzureRuntime(config, budget, scenario_id=scenario_id)
@@ -240,6 +242,8 @@ def main(argv=None) -> int:
     parser.add_argument("--endpoint", help="Existing Azure resource root; overrides FOUNDRY_ENDPOINT")
     parser.add_argument("--decision-deployment", help="Existing Decision-1 deployment; overrides DECISION_DEPLOYMENT")
     parser.add_argument("--llm-deployment", help="Existing GPT deployment; overrides LLM_DEPLOYMENT")
+    parser.add_argument("--llm-profile", choices=("standard", "gpt-6-luna"),
+                        help="GPT request profile; overrides LLM_PROFILE (default: standard)")
     args = parser.parse_args(argv)
     # Host errors are rendered explicitly below, without SDK/workflow tracebacks.
     logging.getLogger("agent_framework").setLevel(logging.CRITICAL)

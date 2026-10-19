@@ -208,7 +208,10 @@ class ExpertTeam:
                     json.dumps(input_data, allow_nan=False),
                     options={
                         "response_format": output_type, "max_tokens": 1200,
-                        "temperature": .2, "store": False,
+                        "store": False,
+                        **({"reasoning_effort": "low"}
+                           if self.runtime.config.llm_profile == "gpt-6-luna"
+                           else {"temperature": .2}),
                     },
                 ), budget.remaining())
                 value = response.value

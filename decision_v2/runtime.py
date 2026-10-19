@@ -32,6 +32,7 @@ class Config:
     endpoint: str
     decision_deployment: str
     llm_deployment: str
+    llm_profile: str = "standard"
 
     def __post_init__(self):
         parsed = urlsplit(self.endpoint)
@@ -45,6 +46,8 @@ class Config:
             raise DemoError("Endpoint must be an HTTPS Azure resource root without credentials, port, or API path.")
         if any(not value.strip() for value in (self.decision_deployment, self.llm_deployment)):
             raise DemoError("Both existing Foundry deployment names are required.")
+        if self.llm_profile not in ("standard", "gpt-6-luna"):
+            raise DemoError("LLM_PROFILE must be standard or gpt-6-luna.")
         object.__setattr__(self, "endpoint", self.endpoint.rstrip("/"))
 
     @classmethod
@@ -57,7 +60,8 @@ class Config:
         if any(not value or not value.strip() for value in values):
             raise DemoError("Set FOUNDRY_ENDPOINT, DECISION_DEPLOYMENT, LLM_DEPLOYMENT or their CLI overrides.")
         try:
-            return cls(*(value.strip() for value in values))
+            profile = getattr(args, "llm_profile", None) or os.getenv("LLM_PROFILE", "standard")
+            return cls(*(value.strip() for value in values), llm_profile=profile.strip())
         except ValueError as exc:
             raise DemoError("Invalid Azure resource endpoint.") from exc
 

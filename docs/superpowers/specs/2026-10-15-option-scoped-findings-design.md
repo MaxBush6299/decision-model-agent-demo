@@ -219,3 +219,22 @@ pending/exit2. The run used3 Decision-1/7 GPT/6 tools in197.0 seconds, without
 truncation, contract failure, retry or output mutation. No subsequent code/prompt
 change or additional inference followed. Full observations are in `docs\v2.md`;
 live readiness is not achieved.
+
+## User-directed optional GPT-6 Luna profile
+
+The user requested a different GPT backend and subsequently authorized up to five
+bounded pull-forward live tests after deployment/configuration/offline checks.
+Resource-specific discovery verified `gpt-6-luna` version `2026-09-22` in East US,
+with available DataZoneStandard quota. A separately approved deployment,
+`specialist-llm-luna`, was provisioned with capacity10 and returned10 RPM/10,000
+TPM. Existing GPT and Decision-1 deployments are preserved.
+
+Reuse the deployment env/CLI override and add explicit `LLM_PROFILE` /
+`--llm-profile gpt-6-luna`; `standard` stays the default. Luna uses low reasoning
+effort, no optional temperature and the unchanged1200-token total completion
+allowance (reasoning plus visible tokens). Keep actual-framework tools, schemas,
+prompts, approvals, contradiction guards, pacing/call/time limits and Entra auth
+unchanged. No retry, repair or normalization; truncation remains explicit failure.
+Stop live tests on full acceptance, auth/quota/deployment error or an identical
+clearly model-related failure. Record actual observations, not provisioning as
+proof of quality; no code/prompt/schema changes between live runs.
