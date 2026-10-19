@@ -207,3 +207,15 @@ actual authority failures, qualified-cell/customer failures, conflict omission,
 unselected nulls, unsupported retained requests, raw claim retention, short prompt
 delivery, Quality/HITL, budgets and v1 behavior. No live inference is authorized
 or performed for this revision. Live readiness remains unverified.
+
+Later explicit authorization covered exactly one live run on `7abe954`.
+All three specialists and final validation executed; sourced operational approvals
+and actual handoffs were empty, Production arithmetic/prose matched its figures,
+and Coordinator preserved both supplied Commercial disagreements as exact conflicts.
+However, Commercial customer/pull-forward flags were wrong, Coordinator selected
+split-standard with expedited/alternative flags true, and Supply misdated shipment
+events in prose. Raw Needs revision69.6% and independent contradictions produced
+pending/exit2. The run used3 Decision-1/7 GPT/6 tools in197.0 seconds, without
+truncation, contract failure, retry or output mutation. No subsequent code/prompt
+change or additional inference followed. Full observations are in `docs\v2.md`;
+live readiness is not achieved.
