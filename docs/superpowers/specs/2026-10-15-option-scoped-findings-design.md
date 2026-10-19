@@ -313,3 +313,16 @@ runs stay unused until the user separately confirms their use.
 and fail specifically on foreign Production keys; the corresponding original
 Production findings pass the ownership/option contract. No new inference or
 live-readiness claim is implied.
+
+Later explicit authorization covered exactly run4 on `5f47005`. Supply completed
+with empty unknowns/conflicts and passed scoped ownership/option validation;
+its cross-domain production limit stayed in prose. Production read both tools
+but its second HTTP200 response was `incomplete` / `max_output_tokens`, reaching
+the unchanged1200-token total allowance (425 reasoning tokens included) and
+ending mid-field. The transport failed closed before parsing; no Commercial,
+Coordinator or final Decision-1 execution followed. Partial Production prose
+also confused separate packing readiness at18:00 with cell occupancy ending17:00;
+that unaccepted claim was not normalized or treated as a validated conflict.
+The run used2 Decision-1 /4 GPT attempts and4 tools in80.156s. No code/prompt/
+schema change, retry or additional inference followed. One possible run remains
+unused pending separate confirmation; live acceptance is not achieved.
