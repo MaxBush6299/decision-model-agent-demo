@@ -166,3 +166,13 @@ empty/type rejection and actual emitted schemas without prose `maxLength`.
 The retained527-character live response parses unchanged and passes its existing
 typed Supply/citation/option checks offline. This does not establish downstream
 business validity or live readiness. No new live inference was authorized or run.
+
+A later explicit user authorization covered one live test on `92d8fe0`. It
+completed all three specialists, Coordinator and final validation without prose
+or token truncation. Production typed150/180/60/Thursday18:00 and Commercial
+commitment flags matched canonical evidence. However, contradictory Production
+prose and unsupported production/freight approvals remained; Coordinator retained
+requests without exposing contradictions. Final Decision-1 chose Needs revision
+at76.8%; pending/exit2,3 Decision-1/7 GPT/6 tools,194.5 seconds. This demonstrates
+live progress on typed arithmetic, not complete business-reasoning acceptance.
+No additional inference is authorized by this record.
