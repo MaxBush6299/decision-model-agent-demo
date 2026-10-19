@@ -238,3 +238,13 @@ unchanged. No retry, repair or normalization; truncation remains explicit failur
 Stop live tests on full acceptance, auth/quota/deployment error or an identical
 clearly model-related failure. Record actual observations, not provisioning as
 proof of quality; no code/prompt/schema changes between live runs.
+
+The first authorized live run on `6753de5` stopped after2 Decision-1 /1 GPT
+attempts,0 tools,5.468 seconds. Despite the general GPT-6 feature table listing
+tools and reasoning support, this deployed service rejected function tools with
+low reasoning on Chat Completions (HTTP400), directing callers to Responses or
+reasoning `none`. No specialist finding, Coordinator join or final validation
+was produced.176 offline tests had passed, but cannot establish provider-specific
+compatibility. No subsequent code/prompt/schema change or extra inference was
+made; four unused runs were not spent on an identical request. Luna remains
+blocked pending a separately approved compatibility change, not business-ready.
