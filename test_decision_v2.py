@@ -348,15 +348,18 @@ class ContractTests(unittest.TestCase):
         }, clear=True):
             default = Config.from_args(args)
             self.assertEqual((default.llm_deployment, default.llm_profile), ("specialist-llm", "standard"))
+            self.assertEqual(default.gpt_output_tokens, 1200)
             with patch.dict("os.environ", {"LLM_DEPLOYMENT": "specialist-llm-luna",
                                           "LLM_PROFILE": "gpt-6-luna"}):
                 luna = Config.from_args(args)
                 self.assertEqual((luna.llm_deployment, luna.llm_profile),
                                  ("specialist-llm-luna", "gpt-6-luna"))
+                self.assertEqual(luna.gpt_output_tokens, 2400)
                 args.llm_deployment, args.llm_profile = "custom-luna", "standard"
                 override = Config.from_args(args)
                 self.assertEqual((override.llm_deployment, override.llm_profile), ("custom-luna", "standard"))
                 self.assertEqual(override.decision_deployment, "decision-gate")
+                self.assertEqual(override.gpt_output_tokens, 1200)
         with self.assertRaises(DemoError):
             Config("https://example.services.ai.azure.com", "decision", "gpt", "unknown")
 
@@ -399,9 +402,14 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
             seen.append(request)
             return httpx.Response(200, json=responses_payload({"content": "{}"}))
         transport = GuardedTransport(config, budget, httpx.MockTransport(service))
-        body = {"max_output_tokens": 1200}
+        body = {"max_output_tokens": config.gpt_output_tokens}
         encoded = json.dumps(body).encode()
-        self.assertEqual(await budget.pace_tokens(encoded), (len(encoded) + 2) // 3 + 1200)
+        self.assertEqual(await budget.pace_tokens(encoded), (len(encoded) + 2) // 3 + 2400)
+        near_limit = {"input": "x" * 22800, "max_output_tokens": 2400}
+        with self.assertRaisesRegex(DemoError, "10,000-token"):
+            await budget.pace_tokens(json.dumps(near_limit).encode())
+        near_limit["max_output_tokens"] = 1200
+        self.assertLess(await budget.pace_tokens(json.dumps(near_limit).encode()), 10000)
         async with httpx.AsyncClient(transport=transport, trust_env=False) as client:
             async with budget.stage("gpt", "coordinator", 0):
                 with self.assertRaises(DemoError):
@@ -721,7 +729,9 @@ class FrameworkAgentTests(unittest.IsolatedAsyncioTestCase):
             actors.add(data["actor"])
             self.assertEqual(body["model"], "gpt-deployment")
             self.assertEqual(body["reasoning"], {"effort": "low"})
-            self.assertEqual(body["max_output_tokens"], 1200)
+            self.assertEqual(body["max_output_tokens"], 2400)
+            self.assertIn("within2400 output tokens", json.dumps(body))
+            self.assertNotIn("within1200 output tokens", json.dumps(body))
             self.assertNotIn("max_completion_tokens", body)
             self.assertNotIn("reasoning_effort", body)
             self.assertNotIn("max_tokens", body)
@@ -2241,6 +2251,18 @@ class ScopedFrameworkTests(unittest.IsolatedAsyncioTestCase):
 class RoleInstructionTests(unittest.IsolatedAsyncioTestCase):
     make_runtime = FrameworkAgentTests.make_runtime
     first_run = ScenarioTests.first_run
+
+    def test_profile_budget_changes_only_the_numeric_prompt_allowance(self):
+        from decision_v2.agents import agent_instructions
+        for scenario in (SCENARIO_ID, "carrier-delay-v2", "production-resequence-v2", "order-pull-forward-v2"):
+            for actor in (*AGENTS, "coordinator"):
+                baseline = agent_instructions(actor, scenario)
+                luna = agent_instructions(actor, scenario, output_tokens=2400)
+                with self.subTest(scenario=scenario, actor=actor):
+                    self.assertIn("within1200 output tokens", baseline)
+                    self.assertNotIn("within1200 output tokens", luna)
+                    self.assertEqual(luna, baseline.replace("within1200 output tokens",
+                                                           "within2400 output tokens"))
 
     def test_one_short_role_prompt_per_actor_replaces_all_layered_blocks(self):
         import decision_v2.agents as agents

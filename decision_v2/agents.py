@@ -63,8 +63,8 @@ ROLE_INSTRUCTIONS = {
 }
 
 
-def agent_instructions(actor: str, scenario_id: ScenarioId) -> str:
-    prompt = ROLE_INSTRUCTIONS[actor]
+def agent_instructions(actor: str, scenario_id: ScenarioId, *, output_tokens: int = 1200) -> str:
+    prompt = ROLE_INSTRUCTIONS[actor].replace("within1200 output tokens", f"within{output_tokens} output tokens")
     options = getattr(fixture_records(scenario_id)["read_build"], "options", ())
     if actor in AGENTS and len(options) > 1:
         keys = ", ".join(sorted(owned_scoped_unknowns(actor)))
@@ -164,7 +164,8 @@ class ExpertTeam:
                 "max_consecutive_errors_per_request": 0,
             },
         )
-        instructions = agent_instructions(actor, state.scenario_id)
+        instructions = agent_instructions(actor, state.scenario_id,
+                                          output_tokens=self.runtime.config.gpt_output_tokens)
         agent = Agent(client=provider, name=actor, id=actor, instructions=instructions, tools=tools)
         self.agents[(actor, state.revision)] = agent
         cleared = {e.key for e in state.overlays}
@@ -215,7 +216,7 @@ class ExpertTeam:
                 response = await budget.bound(lambda: agent.run(
                     json.dumps(input_data, allow_nan=False),
                     options={
-                        "response_format": output_type, "max_tokens": 1200,
+                        "response_format": output_type, "max_tokens": self.runtime.config.gpt_output_tokens,
                         "store": False,
                         **({"reasoning": {"effort": "low"}}
                            if self.runtime.config.llm_profile == "gpt-6-luna"

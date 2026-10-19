@@ -34,6 +34,10 @@ class Config:
     llm_deployment: str
     llm_profile: str = "standard"
 
+    @property
+    def gpt_output_tokens(self) -> int:
+        return 2400 if self.llm_profile == "gpt-6-luna" else 1200
+
     def __post_init__(self):
         parsed = urlsplit(self.endpoint)
         host = parsed.hostname or ""

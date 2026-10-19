@@ -326,3 +326,21 @@ that unaccepted claim was not normalized or treated as a validated conflict.
 The run used2 Decision-1 /4 GPT attempts and4 tools in80.156s. No code/prompt/
 schema change, retry or additional inference followed. One possible run remains
 unused pending separate confirmation; live acceptance is not achieved.
+
+## User-approved Luna-only 2400-token allowance and final run
+
+Following run4's incomplete response, the user authorized raising Luna Responses
+to2400 total output tokens (reasoning included), leaving default Chat Completions
+at1200, then consuming exactly the fifth/final run. This supersedes earlier
+Luna-specific1200-token statements, not historical live observations.
+A single profile property supplies the framework allowance, numeric-only prompt
+budget replacement and startup display. Preserve all other prompt content,
+schemas, ownership/provenance/business guards, tools, auth and low reasoning.
+Native `max_output_tokens` already feeds conservative TPM estimation; reserve
+the full2400 plus serialized input within the unchanged10,000TPM ceiling,
+including fail-before-dispatch for oversized single requests. Do not raise
+call/tool/time limits or relax incomplete/truncation rejection.
+186 offline tests pass before the final authorized run. No further code/prompt/
+schema changes, retries, repair or normalization are authorized during or after
+that run. Record actual results without a readiness claim unless acceptance
+fully passes; all prior live authorization is consumed when run5 executes.
