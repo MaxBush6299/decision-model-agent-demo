@@ -185,13 +185,11 @@ class ProductionOptionAssessment(OptionEvidence):
     uses_alternative_cell: bool | None
     requires_overtime: bool | None
     displaces_other_orders: bool | None
-    approval_requests: list[Literal["production_authority"]] = Field(max_length=1)
 
 
 class CommercialOptionAssessment(OptionEvidence):
     pulls_order_forward: bool | None
     changes_customer_commitment: bool | None
-    approval_requests: list[Literal["freight_authority", "customer_commitment"]] = Field(max_length=2)
 
 
 class ScopedFindingBase(StrictModel):
@@ -443,9 +441,6 @@ def validate_proposal(proposal: CoordinatedProposal, state: RunState) -> None:
         if field_name == "approval_requests":
             required.update(v for f in legacy for v in f.approval_requests
                             if v in ("quality_containment", "customer_notification"))
-            required.update(value for assessment in selected
-                            if isinstance(assessment, (ProductionOptionAssessment, CommercialOptionAssessment))
-                            for value in assessment.approval_requests)
             required.update(value for finding in scoped for value in finding.safety_approval_requests)
         if not required.issubset(getattr(proposal, field_name)):
             raise DemoError(f"Coordinator omitted unresolved {field_name}.")

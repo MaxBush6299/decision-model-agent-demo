@@ -42,8 +42,8 @@ records do not become specialist evidence.
 | Role | Per-option typed claims |
 | --- | --- |
 | Supply-chain | Aggregate incremental freight when supported, `uses_alternative_carrier`, `uses_expedited_freight`. Explain material availability, carrier/cutoff/arrival feasibility and scope limits. No production or approval-request fields. |
-| Production | Required cell minutes, available cell minutes, packing minutes and ready time when supported; `uses_alternative_cell`, `requires_overtime`, `displaces_other_orders`; only `production_authority` approval requests. Cell usage excludes separately scheduled packing, and the cell window cannot extend beyond availability/staffing bounds. |
-| Commercial | `pulls_order_forward`, `changes_customer_commitment`; only `freight_authority`/`customer_commitment` approval requests, grounded in its shipment/policy evidence. No manufacturing or expedited-service dependency fields. |
+| Production | Required cell minutes, available cell minutes, packing minutes and ready time when supported; `uses_alternative_cell`, `requires_overtime`, `displaces_other_orders`. No operational approval-request fields. Cell usage excludes separately scheduled packing, and the cell window cannot extend beyond availability/staffing bounds. |
+| Commercial | `pulls_order_forward`, `changes_customer_commitment`. No operational approval-request fields or manufacturing/expedited-service dependency fields. |
 
 Unsupported numeric/time measurements are nullable and must be explained,
 not invented. Per-option dependency claims distinguish true, false and unknown
@@ -77,8 +77,9 @@ records. It still returns the existing model-generated proposal, selects a
 supplied option and explains its tradeoff. No preferred answer is supplied.
 
 The join checks each participating role's assessment for that selected option.
-True dependency flags and approval requests in that assessment must be
-preserved; claims from the other option do not contaminate the chosen plan.
+True dependency flags in that assessment must be preserved; claims from the
+other option do not become chosen-plan dependencies. Operational approvals in
+scoped cases now come from sourced host checks, as approved in the A+B revision.
 Global unknowns, conflicts and safety requirements remain preserved.
 Finding references retain actor/revision identity. With no specialist in a
 domain, Coordinator uses supplied canonical evidence, not fabricated findings.
@@ -176,3 +177,33 @@ requests without exposing contradictions. Final Decision-1 chose Needs revision
 at76.8%; pending/exit2,3 Decision-1/7 GPT/6 tools,194.5 seconds. This demonstrates
 live progress on typed arithmetic, not complete business-reasoning acceptance.
 No additional inference is authorized by this record.
+
+## User-approved A+B revision: prompts and sourced approvals
+
+Replace the layered instruction blocks with one eight-sentence positive prompt
+per actor. Specialists report supplied derived figures directly rather than
+re-deriving arithmetic in prose. Production owns cell/packing/readiness;
+Supply-chain owns inventory/shipping; Commercial owns customer meaning.
+Coordinator owns sourced reconciliation and the selected-option join.
+
+Remove scoped Production/Commercial `approval_requests` entirely, preserving all
+other output fields and legacy/Quality contracts. Derive operational approval
+handoffs from fixture authority, qualification, capacity, material, reservation
+and customer-permission/window checks. Coordinator receives sourced per-option
+requests; its unchanged proposal field remains raw auditable output, not the
+source of host operational handoffs.
+
+Supply every measurable specialist mismatch/null claim, including unselected
+options, as an exact source-cited `proposal_feedback` conflict for Coordinator
+to reproduce. Require any unsupported retained proposal approval to be represented
+as an explicit sourced conflict. Missing required approvals or disagreement
+conflicts fail without repair. Preserve model flags and numeric claims unchanged;
+independent contradiction review remains, including authority-seeking actions.
+Narrative reconciliation remains a model responsibility, not a claimed general
+natural-language verifier.
+
+174 offline tests pass, covering strict schema field removal,1800<=2500 versus
+actual authority failures, qualified-cell/customer failures, conflict omission,
+unselected nulls, unsupported retained requests, raw claim retention, short prompt
+delivery, Quality/HITL, budgets and v1 behavior. No live inference is authorized
+or performed for this revision. Live readiness remains unverified.

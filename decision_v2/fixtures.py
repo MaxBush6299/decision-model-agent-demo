@@ -619,7 +619,14 @@ def grounded_fixture_payload(name, records, executed):
                 "ready_at": position["ready_at"],
             }
         derived["measurement_scope"] = "Cell time excludes separate packing; ready_at is factory readiness, not customer arrival."
-    elif name in ("read_shipment", "read_approval_policy") and {
+    elif name == "read_shipment":
+        derived["options"] = {
+            option.option_id: {
+                "freight_total_usd": sum(leg.freight_cost_usd for leg in option.legs),
+            } for option in records[name].options
+        }
+        derived["measurement_scope"] = "Aggregate incremental freight from shipment legs only; no manufacturing or authority assessment."
+    if name in ("read_shipment", "read_approval_policy") and {
         "read_shipment", "read_approval_policy"
     }.issubset(executed):
         shipment, policy = records["read_shipment"], records["read_approval_policy"]
@@ -649,7 +656,7 @@ def grounded_fixture_payload(name, records, executed):
             }
         derived["authority"] = authority
         derived["measurement_scope"] = "Existing planning permission, not executed customer acceptance or new approval. No manufacturing assessment."
-    else:
+    if "options" not in derived and "authority" not in derived:
         return payload
     payload["derived_evidence"] = derived
     return payload
@@ -795,9 +802,33 @@ def option_disagreements(proposal, records):
     selected = operational_options(records).get(proposal.selected_option_id)
     if selected is None:
         return []
-    return [f"Selected-option contradiction: {key}={getattr(proposal, key)}; "
+    expected = dict(selected["dependencies"])
+    if selected["checks"]["customer_request"] and selected["checks"]["delivery_window"]:
+        expected["changes_customer_commitment"] = False
+    reasons = [f"Selected-option contradiction: {key}={getattr(proposal, key)}; "
             f"canonical {proposal.selected_option_id} records support {value}."
-            for key, value in selected["dependencies"].items() if getattr(proposal, key) != value]
+            for key, value in expected.items() if getattr(proposal, key) != value]
+    action_approval = {"seek_freight_approval": "freight_authority",
+                       "request_customer_window": "customer_commitment"}.get(proposal.recommended_action)
+    if action_approval and action_approval not in sourced_option_approvals(records, proposal.selected_option_id):
+        reasons.append(f"Selected-option contradiction: {proposal.recommended_action} is unsupported by sourced policy checks.")
+    return reasons
+
+
+def sourced_option_approvals(records, option_id: str) -> list[str]:
+    selected = operational_options(records)[option_id]
+    checks = selected["checks"]
+    required = set()
+    if (selected["freight_total_usd"] > records["read_approval_policy"].planner_limit_usd
+            or not selected["approved_carriers"] or not checks["carrier_confirmation"]):
+        required.add("freight_authority")
+    if not checks["delivery_window"] or not checks["customer_request"]:
+        required.add("customer_commitment")
+    if not all(checks[key] for key in (
+        "production_capacity", "qualified_cell", "material_allocation", "other_order_impact"
+    )):
+        required.add("production_authority")
+    return sorted(required)
 
 
 def scoped_option_disagreements(finding: ScopedFinding, records, option_id: str) -> list[str]:
@@ -894,6 +925,13 @@ def operational_policy(proposal, records):
     if proposal.uses_held_stock:
         raise DemoError("Held stock cannot be used by any scenario.")
     required = set(proposal.approval_requests)
+    if records["read_build"].options and proposal.selected_option_id is not None:
+        required = set(sourced_option_approvals(records, proposal.selected_option_id))
+        required.update(approval for approval in proposal.approval_requests
+                        if approval in ("quality_containment", "customer_notification"))
+        if proposal.containment_required:
+            required.add("quality_containment")
+        return sorted(required)
     checks = operational_checks(records, proposal.selected_option_id)
     shipment, policy = records["read_shipment"], records["read_approval_policy"]
     options = operational_options(records)

@@ -62,10 +62,10 @@ def scoped_payload(actor, scenario="order-pull-forward-v2"):
             item.update(required_cell_minutes=minutes, available_cell_minutes=available,
                         packing_minutes=packing, ready_at=ready,
                         uses_alternative_cell=scenario == "production-resequence-v2",
-                        requires_overtime=False, displaces_other_orders=False, approval_requests=[])
+                        requires_overtime=False, displaces_other_orders=False)
         else:
             item.update(pulls_order_forward=scenario == "order-pull-forward-v2",
-                        changes_customer_commitment=False, approval_requests=[])
+                        changes_customer_commitment=False)
         assessments.append(item)
     return dict(agent_id=actor, revision=0, assessment="Synthetic options assessed.",
                 implication="No authority or execution granted.", preferred_option_id=None,
@@ -119,7 +119,9 @@ class OptionContractTests(unittest.TestCase):
             ("supply-chain", SupplyFinding, {"requires_overtime": False}),
             ("production", ProductionFinding, {"uses_expedited_freight": False}),
             ("production", ProductionFinding, {"approval_requests": ["freight_authority"]}),
+            ("production", ProductionFinding, {"approval_requests": ["production_authority"]}),
             ("commercial", CommercialFinding, {"displaces_other_orders": False}),
+            ("commercial", CommercialFinding, {"approval_requests": ["customer_commitment"]}),
         ):
             with self.subTest(actor=actor, extra=extra), self.assertRaises(ValidationError):
                 data = scoped_payload(actor)
@@ -528,6 +530,10 @@ class MockFoundry:
                                              (*f.get("approval_requests", []), *f.get("safety_approval_requests", []))}),
                 "conflicts": [c for f in findings for c in f["conflicts"]],
             }
+            if "sourced_approval_requests" in data:
+                output["approval_requests"] = sorted(set(output["approval_requests"]) | set(
+                    data["sourced_approval_requests"][selected_option]["approval_requests"]))
+                output["conflicts"].extend(data["evidence_disagreements"])
             for key in ("uses_alternative_carrier", "uses_alternative_cell", "pulls_order_forward",
                         "requires_overtime", "displaces_other_orders"):
                 output[key] = any(f.get(key, False) for f in findings)
@@ -1176,20 +1182,14 @@ class ScenarioTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("options", state.evidence[build_id])
             self.assertNotIn("cell", state.evidence[build_id])
 
-    async def test_discarded_option_dependencies_and_approvals_do_not_contaminate_selected_plan(self):
+    async def test_specialist_approval_requests_are_rejected_in_both_option_scopes(self):
         runtime, state, workflow, events = await self.first_run("order-pull-forward-v2")
         finding = state.findings["commercial"]
-        data = finding.model_dump()
-        data["preferred_option_id"] = "full-early"
-        data["option_assessments"][0]["approval_requests"] = ["freight_authority"]
-        state.findings["commercial"] = type(finding).model_validate(data)
-        # Preference does not change claim scope; full-option freight cannot contaminate split.
-        from decision_v2.contracts import validate_proposal
-        validate_proposal(state.proposal, state)
-        data["option_assessments"][1]["approval_requests"] = ["freight_authority"]
-        state.findings["commercial"] = type(finding).model_validate(data)
-        with self.assertRaisesRegex(DemoError, "omitted"):
-            validate_proposal(state.proposal, state)
+        for index in (0, 1):
+            data = finding.model_dump()
+            data["option_assessments"][index]["approval_requests"] = ["freight_authority"]
+            with self.subTest(index=index), self.assertRaises(ValidationError):
+                type(finding).model_validate(data)
 
     async def test_canonical_selected_option_disagreements_block_positive_validation(self):
         runtime, state, workflow, events = await self.first_run("order-pull-forward-v2")
@@ -1438,7 +1438,10 @@ class ScenarioTests(unittest.IsolatedAsyncioTestCase):
                 return response
             service.override = alter
             runtime, state, workflow, events = await self.first_run("order-pull-forward-v2", service)
-            self.assertIn(approval, state.policies)
+            if field == "containment_required":
+                self.assertIn(approval, state.policies)
+            else:
+                self.assertTrue(state.proposal.conflicts or review_reasons(state))
             self.assertTrue(any(event.type == "request_info" for event in events))
         service, base = MockFoundry(), MockFoundry()
         def omit(request, body):
@@ -1589,6 +1592,132 @@ class ScopedFrameworkTests(unittest.IsolatedAsyncioTestCase):
     make_runtime = FrameworkAgentTests.make_runtime
     first_run = ScenarioTests.first_run
 
+    def test_sourced_approvals_follow_fixture_authority_not_specialist_flags(self):
+        from decision_v2.fixtures import sourced_option_approvals
+        records = dict(fixture_records("order-pull-forward-v2"))
+        self.assertEqual(sourced_option_approvals(records, "full-early"), [])
+        self.assertEqual(sourced_option_approvals(records, "split-standard"), [])
+        records["read_approval_policy"] = records["read_approval_policy"].model_copy(
+            update={"planner_limit_usd": 1000})
+        self.assertIn("freight_authority", sourced_option_approvals(records, "full-early"))
+        self.assertNotIn("freight_authority", sourced_option_approvals(records, "split-standard"))
+        records["read_build"] = records["read_build"].model_copy(update={
+            "options": tuple(option.model_copy(update={"cell": option.cell.model_copy(
+                update={"qualification_reference": None})}) for option in records["read_build"].options)})
+        self.assertIn("production_authority", sourced_option_approvals(records, "full-early"))
+        records["read_approval_policy"] = records["read_approval_policy"].model_copy(
+            update={"customer_delivery_options": ()})
+        self.assertIn("customer_commitment", sourced_option_approvals(records, "full-early"))
+
+    async def test_scoped_approval_schemas_and_coordinator_sourced_payload(self):
+        runtime, state, workflow, events = await self.first_run("order-pull-forward-v2")
+        for request, body in self.service.requests:
+            if "messages" not in body:
+                continue
+            data = json.loads(next(m["content"] for m in body["messages"] if m["role"] == "user"))
+            schema = body["response_format"]["json_schema"]["schema"]
+            if data["actor"] in ("production", "commercial"):
+                self.assertNotIn('"approval_requests"', json.dumps(schema))
+            if data["actor"] == "coordinator":
+                self.assertEqual(data["sourced_approval_requests"]["full-early"]["approval_requests"], [])
+                self.assertEqual(data["evidence_disagreements"], [])
+        self.assertEqual(state.policies, [])
+        self.assertEqual(runtime.budget.counts, {"decision": 3, "gpt": 7})
+
+    async def test_model_authority_actions_and_flags_cannot_bypass_contradiction_review(self):
+        runtime, state, workflow, events = await self.first_run("order-pull-forward-v2")
+        for update in ({"changes_customer_commitment": True},
+                       {"requires_overtime": True},
+                       {"recommended_action": "seek_freight_approval"},
+                       {"recommended_action": "request_customer_window"}):
+            original = state.proposal
+            state.proposal = original.model_copy(update=update)
+            with self.subTest(update=update):
+                self.assertTrue(any("Selected-option contradiction" in r for r in review_reasons(state)))
+                self.assertEqual(state.proposal.model_dump()[next(iter(update))], next(iter(update.values())))
+            state.proposal = original
+
+    async def test_coordinator_must_expose_even_unselected_null_claim_as_exact_conflict(self):
+        for omit in (False, True):
+            service, base = MockFoundry(), MockFoundry()
+            def alter(request, body):
+                response = base(request)
+                if request.url.path.endswith("/chat/completions"):
+                    payload = response.json()
+                    message = payload["choices"][0]["message"]
+                    if message.get("content"):
+                        data = json.loads(message["content"])
+                        if data.get("agent_id") == "commercial":
+                            data["option_assessments"][0]["changes_customer_commitment"] = None
+                        if "finding_refs" in data and omit:
+                            data["conflicts"] = []
+                        message["content"] = json.dumps(data)
+                        return httpx.Response(200, json=payload)
+                return response
+            service.override = alter
+            if omit:
+                with self.assertRaisesRegex(DemoError, "sourced evidence disagreement"):
+                    await self.first_run("order-pull-forward-v2", service)
+                self.assertEqual(self.runtime.budget.counts, {"decision": 2, "gpt": 7})
+            else:
+                runtime, state, workflow, events = await self.first_run("order-pull-forward-v2", service)
+                self.assertIsNone(state.findings["commercial"].option_assessments[0].changes_customer_commitment)
+                self.assertTrue(any(c.subject_key == "proposal_feedback" and "full-early" in c.description
+                                    for c in state.proposal.conflicts))
+                self.assertTrue(any(event.type == "request_info" for event in events))
+
+    async def test_unsupported_coordinator_approval_requires_conflict_not_policy_authority(self):
+        for expose in (False, True):
+            service, base = MockFoundry(), MockFoundry()
+            def alter(request, body):
+                response = base(request)
+                if request.url.path.endswith("/chat/completions"):
+                    payload = response.json()
+                    message = payload["choices"][0]["message"]
+                    if message.get("content"):
+                        data = json.loads(message["content"])
+                        if "finding_refs" in data:
+                            data["approval_requests"] = ["freight_authority"]
+                            if expose:
+                                data["conflicts"].append({
+                                    "subject_key": "proposal_feedback",
+                                    "evidence_ids": [r.evidence_id for r in fixture_records(
+                                        "order-pull-forward-v2").values()],
+                                    "description": "Unsupported operational approval: freight_authority.",
+                                })
+                            message["content"] = json.dumps(data)
+                            return httpx.Response(200, json=payload)
+                return response
+            service.override = alter
+            if not expose:
+                with self.assertRaisesRegex(DemoError, "unsupported approval"):
+                    await self.first_run("order-pull-forward-v2", service)
+            else:
+                runtime, state, workflow, events = await self.first_run("order-pull-forward-v2", service)
+                self.assertEqual(state.proposal.approval_requests, ["freight_authority"])
+                self.assertEqual(state.policies, [])
+                self.assertTrue(any(event.type == "request_info" for event in events))
+
+    async def test_coordinator_cannot_drop_a_sourced_required_approval(self):
+        service, base = MockFoundry(), MockFoundry()
+        def omit(request, body):
+            response = base(request)
+            if request.url.path.endswith("/chat/completions"):
+                payload = response.json()
+                message = payload["choices"][0]["message"]
+                if message.get("content"):
+                    data = json.loads(message["content"])
+                    if "finding_refs" in data:
+                        data["approval_requests"] = []
+                        message["content"] = json.dumps(data)
+                        return httpx.Response(200, json=payload)
+            return response
+        service.override = omit
+        with patch("decision_v2.agents.sourced_option_approvals", return_value=["freight_authority"]):
+            with self.assertRaisesRegex(DemoError, "omitted a sourced policy approval"):
+                await self.first_run("order-pull-forward-v2", service)
+        self.assertEqual(self.runtime.budget.counts, {"gpt": 7, "decision": 2})
+
     async def test_legacy_and_proposal_narratives_are_not_character_bounded(self):
         from decision_v2.contracts import Conflict
         for scenario in (SCENARIO_ID, "order-pull-forward-v2"):
@@ -1643,7 +1772,12 @@ class ScopedFrameworkTests(unittest.IsolatedAsyncioTestCase):
                     payload = json.loads(message["content"])
                     if "derived_evidence" in payload:
                         observed.setdefault(actor, []).append(payload["derived_evidence"])
-        self.assertEqual(set(observed), {"production", "commercial"})
+        self.assertEqual(set(observed), {"supply-chain", "production", "commercial"})
+        shipping = observed["supply-chain"][0]
+        self.assertEqual(shipping["options"]["full-early"]["freight_total_usd"], 1800)
+        self.assertEqual(shipping["source_evidence_ids"],
+                         [fixture_records("order-pull-forward-v2")["read_shipment"].evidence_id])
+        self.assertNotIn("authority", shipping)
         production = observed["production"][0]
         self.assertEqual(production["options"]["full-early"]["run_minutes"], 120)
         commercial = next(d["authority"] for d in observed["commercial"] if "authority" in d)
@@ -1814,6 +1948,17 @@ class RoleInstructionTests(unittest.IsolatedAsyncioTestCase):
     make_runtime = FrameworkAgentTests.make_runtime
     first_run = ScenarioTests.first_run
 
+    def test_one_short_role_prompt_per_actor_replaces_all_layered_blocks(self):
+        import decision_v2.agents as agents
+        for removed in ("COMMON_INSTRUCTIONS", "QUALITY_INSTRUCTIONS", "SCOPED_ROLE_INSTRUCTIONS"):
+            self.assertFalse(hasattr(agents, removed))
+        for actor in (*AGENTS, "coordinator"):
+            prompt = agents.agent_instructions(actor, SCENARIO_ID)
+            self.assertEqual(prompt, agents.agent_instructions(actor, "order-pull-forward-v2"))
+            self.assertLess(len(prompt.split()), 220)
+            self.assertIn("1200", prompt)
+            self.assertNotIn("characters", prompt)
+
     async def test_specialists_receive_domain_process_without_coordinator_join_duties(self):
         runtime, state, workflow, events = await self.first_run("order-pull-forward-v2")
         prompts = {}
@@ -1824,25 +1969,25 @@ class RoleInstructionTests(unittest.IsolatedAsyncioTestCase):
             prompts[data["actor"]] = " ".join(str(m["content"]) for m in body["messages"]
                                              if m["role"] in ("system", "developer"))
         traits = {
-            "supply-chain": ("book", "aggregate", "inventory alone", "alternative carrier", "expedited"),
-            "production": ("ceil", "packing", "reserved", "overtime", "optimal",
-                           "available_until", "staffed_shift_end", "earlier"),
-            "commercial": ("binding", "monetary", "preference", "cost alone"),
+            "supply-chain": ("booking", "freight totals", "manufacturing capacity", "alternative carrier", "expedited"),
+            "production": ("derived_evidence", "packing_minutes", "reservations", "overtime",
+                           "available_cell_minutes", "ready_at", "rather than re-deriving"),
+            "commercial": ("planning permission", "unpriced", "preference", "authority checks"),
         }
         for actor, phrases in traits.items():
             with self.subTest(actor=actor):
                 prompt = prompts[actor]
                 for phrase in phrases:
                     self.assertIn(phrase, prompt)
-                for phrase in ("preferred_option_id", "required_unknown_keys", "previous_conflicts",
+                for phrase in ("option_assessments", "required_unknown_keys", "previous_conflicts",
                                "untrusted", "unverified", "concise", "1200"):
                     self.assertIn(phrase, prompt)
                 self.assertNotIn("finding_refs", prompt)
                 self.assertNotIn("characters", prompt)
                 self.assertNotIn("containment_required=true", prompt)
-                self.assertIn("allowlisted", prompt)
+                self.assertIn("executed", prompt)
         coordinator = prompts["coordinator"]
-        for phrase in ("finding_refs", "matching", "Unsupported", "weights", "option_id",
+        for phrase in ("finding_refs", "matching", "unsupported", "weights", "option_id",
                        "safety_approval_requests"):
             self.assertIn(phrase, coordinator)
         self.assertIn("no tools", coordinator.lower())
@@ -1858,8 +2003,7 @@ class RoleInstructionTests(unittest.IsolatedAsyncioTestCase):
             data = json.loads(next(m["content"] for m in body["messages"] if m["role"] == "user"))
             prompt = " ".join(str(m["content"]) for m in body["messages"]
                               if m["role"] in ("system", "developer"))
-            for phrase in ("uses_held_stock=false", "containment_required=true", "sample",
-                           "planning_update", "provisional", "notification"):
+            for phrase in ("Quality", "hold", "containment", "unverified"):
                 self.assertIn(phrase, prompt)
             if data["actor"] != "coordinator":
                 self.assertNotIn("finding_refs", prompt)
@@ -1875,18 +2019,18 @@ class RoleInstructionTests(unittest.IsolatedAsyncioTestCase):
             prompt = " ".join(str(m["content"]) for m in body["messages"]
                               if m["role"] in ("system", "developer"))
             if data["actor"] == "coordinator":
-                for phrase in ("matching", "proposal_feedback", "not endorsement"):
+                for phrase in ("matching", "proposal_feedback", "preserve raw model claims"):
                     self.assertIn(phrase, prompt)
             else:
                 if data["actor"] == "supply-chain":
-                    for phrase in ("expedited=true", "service_kind", "approved_alternative"):
+                    for phrase in ("expedited service", "alternative carrier", "freight totals"):
                         self.assertIn(phrase, prompt)
                     self.assertNotIn('"requires_overtime"', json.dumps(body["response_format"]))
                 elif data["actor"] == "production":
                     self.assertIn("packing", prompt)
                     self.assertNotIn('"freight_authority"', json.dumps(body["response_format"]))
                 else:
-                    self.assertIn("authority gap", prompt)
+                    self.assertIn("authority checks", prompt)
                     self.assertNotIn('"displaces_other_orders"', json.dumps(body["response_format"]))
                 self.assertNotIn("logical OR", prompt)
 
