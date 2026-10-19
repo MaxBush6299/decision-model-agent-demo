@@ -20,6 +20,7 @@ from .contracts import (
     ASSESSMENT_OPTIONS, parse_choices,
 )
 from .fixtures import ALLOWLIST, authoritative_constraints, fixture_records, fixture_payload, issue_text, routing_context
+from .diagnostics import diagnostic_error
 
 DECISION_SCOPE = "https://cognitiveservices.azure.com/.default"
 LLM_SCOPE = "https://ai.azure.com/.default"
@@ -232,16 +233,20 @@ class GuardedTransport(httpx.AsyncBaseTransport):
         if token_estimate is not None:
             self.budget.token_window.append((self.budget.clock(), token_estimate))
         started = self.budget.clock()
-        response = await self.budget.bound(lambda: self.inner.handle_async_request(request), 60)
+        response = None
         try:
+            response = await self.budget.bound(lambda: self.inner.handle_async_request(request), 60)
             await self.budget.bound(response.aread, max(.001, 60 - (self.budget.clock() - started)))
             if len(response.content) > 1_048_576:
                 raise DemoError("Model response exceeds bounded payload size.")
             if kind == "gpt" and response.is_success:
                 self.check_completion(response, actor, revision)
-        except (DemoError, httpx.HTTPError):
-            await response.aclose()
-            raise
+        except (DemoError, httpx.HTTPError) as exc:
+            error = diagnostic_error(f"{kind}/{actor} request failed; no retry or repair was made.",
+                                     exc, response)
+            if response is not None:
+                await response.aclose()
+            raise error from exc
         self.budget.trace(f"Client round trip {kind}/{actor}: "
                           f"{(self.budget.clock() - started) * 1000:.1f}ms; HTTP {response.status_code}")
         return response

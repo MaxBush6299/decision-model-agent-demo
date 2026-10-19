@@ -74,6 +74,74 @@ def scoped_payload(actor, scenario="order-pull-forward-v2"):
                 safety_approval_requests=[], unknown_keys=[], conflicts=[], option_assessments=assessments)
 
 
+class DiagnosticCaptureTests(unittest.IsolatedAsyncioTestCase):
+    async def test_capture_keeps_transport_exception_and_sanitizes_failed_request(self):
+        from decision_v2.diagnostics import DiagnosticCaptureTransport
+        def service(request):
+            raise httpx.ReadTimeout("Socket read timed out", request=request)
+        capture = DiagnosticCaptureTransport(httpx.MockTransport(service), lambda: ("gpt", "production", 0))
+        self.addAsyncCleanup(capture.aclose)
+        request = httpx.Request("POST", "https://private.services.ai.azure.com/openai/v1/responses",
+                                json={"max_output_tokens": 2400, "input": [
+                                    {"type": "reasoning", "encrypted_content": "SECRET_CONTINUATION",
+                                     "id": "SECRET_REASONING_ID"}]},
+                                headers={"Authorization": "Bearer SECRET_REQUEST_TOKEN"})
+        with self.assertRaises(httpx.ReadTimeout):
+            await capture.handle_async_request(request)
+        record = capture.records[0]
+        self.assertIn("ReadTimeout", json.dumps(record["failure"]))
+        self.assertGreaterEqual(record["elapsed_seconds"], 0)
+        self.assertNotIn("status", record)
+        self.assertNotIn("response", record)
+        for secret in ("SECRET_CONTINUATION", "SECRET_REASONING_ID", "SECRET_REQUEST_TOKEN",
+                       "private.services.ai.azure.com"):
+            self.assertNotIn(secret, json.dumps(record))
+        self.assertIn("SECRET_CONTINUATION", request.content.decode())
+        self.assertEqual(request.headers["authorization"], "Bearer SECRET_REQUEST_TOKEN")
+
+    async def test_capture_keeps_status_and_request_id_when_body_read_fails(self):
+        from decision_v2.diagnostics import DiagnosticCaptureTransport
+        class BrokenBody(httpx.AsyncByteStream):
+            async def __aiter__(self):
+                yield b'{"status":"'
+                raise httpx.ReadError("Connection closed during response body")
+        capture = DiagnosticCaptureTransport(
+            httpx.MockTransport(lambda request: httpx.Response(
+                200, headers={"x-ms-request-id": "test-read-correlation"}, stream=BrokenBody())),
+            lambda: ("gpt", "production", 0),
+        )
+        self.addAsyncCleanup(capture.aclose)
+        with self.assertRaises(httpx.ReadError):
+            await capture.handle_async_request(httpx.Request(
+                "POST", "https://example.services.ai.azure.com/openai/v1/responses", json={}))
+        record = capture.records[0]
+        self.assertEqual(record["status"], 200)
+        self.assertEqual(record["failure"]["response"]["request_id"], "test-read-correlation")
+        self.assertIn("ReadError", json.dumps(record["failure"]))
+        self.assertIn("body_unavailable", record["failure"]["response"])
+        self.assertNotIn("response", record)
+
+    async def test_capture_success_does_not_mutate_response_or_native_usage(self):
+        from decision_v2.diagnostics import DiagnosticCaptureTransport
+        payload = {"id": "SECRET_PROVIDER_ID", "status": "incomplete",
+                   "incomplete_details": {"reason": "max_output_tokens"},
+                   "output": [{"type": "reasoning", "encrypted_content": "SECRET_OPAQUE"}],
+                   "usage": {"input_tokens": 100, "output_tokens": 2400}}
+        capture = DiagnosticCaptureTransport(httpx.MockTransport(
+            lambda request: httpx.Response(200, json=payload, headers={"apim-request-id": "test-native-id"})),
+            lambda: ("gpt", "production", 0))
+        self.addAsyncCleanup(capture.aclose)
+        response = await capture.handle_async_request(httpx.Request(
+            "POST", "https://example.services.ai.azure.com/openai/v1/responses", json={}))
+        self.assertEqual(response.json(), payload)
+        record = capture.records[0]
+        self.assertEqual(record["response"]["usage"], {"input_tokens": 100, "output_tokens": 2400})
+        self.assertEqual(record["response_details"]["incomplete_details"], {"reason": "max_output_tokens"})
+        self.assertEqual(record["response_details"]["request_id"], "test-native-id")
+        self.assertNotIn("SECRET_PROVIDER_ID", json.dumps(record))
+        self.assertNotIn("SECRET_OPAQUE", json.dumps(record))
+
+
 class OptionContractTests(unittest.TestCase):
     def test_grounding_uses_only_read_sources_and_preserves_records(self):
         from decision_v2.fixtures import grounded_fixture_payload, fixture_payload
@@ -774,6 +842,69 @@ class FrameworkAgentTests(unittest.IsolatedAsyncioTestCase):
                 await ExpertTeam(runtime).assess("production", state)
             self.assertEqual(len(seen), 1)
             self.assertEqual(runtime.budget.counts["gpt"], 1)
+
+    async def test_gpt_failure_keeps_sanitized_timeout_and_transport_causes(self):
+        for error_type in (httpx.ReadTimeout, httpx.ConnectError):
+            def service(request):
+                raise error_type("Provider connection failed at https://private.services.ai.azure.com/"
+                                 "?api_key=SECRET_API_KEY Authorization: Bearer SECRET_BEARER",
+                                 request=request)
+            runtime = self.make_runtime(service, scenario_id="order-pull-forward-v2",
+                                        llm_profile="gpt-6-luna")
+            state = RunState(scenario_id=runtime.scenario_id, evidence=initial_evidence(runtime.scenario_id))
+            with self.subTest(error=error_type.__name__), self.assertRaises(DemoError) as caught:
+                await ExpertTeam(runtime).assess("production", state)
+            details = getattr(caught.exception, "diagnostics", None)
+            self.assertIsNotNone(details, "The underlying transport cause must survive the GPT wrapper.")
+            serialized = json.dumps(details)
+            self.assertIn(error_type.__name__, serialized)
+            self.assertIn(error_type.__name__, str(caught.exception))
+            for secret in ("SECRET_API_KEY", "SECRET_BEARER", "private.services.ai.azure.com"):
+                self.assertNotIn(secret, serialized + str(caught.exception))
+            self.assertEqual(runtime.budget.counts["gpt"], 1)
+
+    async def test_gpt_http_failure_keeps_status_body_and_request_correlation(self):
+        def service(request):
+            return httpx.Response(503, headers={"x-request-id": "test-correlation-503",
+                                               "authorization": "SECRET_RESPONSE_HEADER"},
+                                  json={"error": {"code": "ServiceUnavailable",
+                                                  "message": "Backend unavailable",
+                                                  "api_key": "SECRET_BODY_KEY"}})
+        runtime = self.make_runtime(service, scenario_id="order-pull-forward-v2",
+                                    llm_profile="gpt-6-luna")
+        state = RunState(scenario_id=runtime.scenario_id, evidence=initial_evidence(runtime.scenario_id))
+        with self.assertRaises(DemoError) as caught:
+            await ExpertTeam(runtime).assess("production", state)
+        details = getattr(caught.exception, "diagnostics", None)
+        self.assertIsNotNone(details, "HTTP response evidence must survive framework wrapping.")
+        serialized = json.dumps(details)
+        for expected in ("503", "ServiceUnavailable", "Backend unavailable", "test-correlation-503"):
+            self.assertIn(expected, serialized)
+        for secret in ("SECRET_RESPONSE_HEADER", "SECRET_BODY_KEY"):
+            self.assertNotIn(secret, serialized + str(caught.exception))
+        self.assertEqual(runtime.budget.counts["gpt"], 1)
+
+    async def test_gpt_incomplete_failure_keeps_native_status_without_accepting_output(self):
+        def service(request):
+            payload = responses_payload({"content": '{"assessment":"unfinished'}, "length")
+            payload["id"] = "SECRET_RESPONSE_ID"
+            payload["output"].insert(0, {"type": "reasoning", "encrypted_content": "SECRET_OPAQUE"})
+            return httpx.Response(200, headers={"apim-request-id": "test-correlation-incomplete"},
+                                  json=payload)
+        runtime = self.make_runtime(service, scenario_id="order-pull-forward-v2",
+                                    llm_profile="gpt-6-luna")
+        state = RunState(scenario_id=runtime.scenario_id, evidence=initial_evidence(runtime.scenario_id))
+        with self.assertRaises(DemoError) as caught:
+            await ExpertTeam(runtime).assess("production", state)
+        details = getattr(caught.exception, "diagnostics", None)
+        self.assertIsNotNone(details, "Native incomplete evidence must survive the guard.")
+        serialized = json.dumps(details)
+        for expected in ("incomplete", "max_output_tokens", "test-correlation-incomplete"):
+            self.assertIn(expected, serialized)
+        for secret in ("SECRET_OPAQUE", "SECRET_RESPONSE_ID"):
+            self.assertNotIn(secret, serialized + str(caught.exception))
+        self.assertEqual(state.findings, {})
+        self.assertEqual(runtime.budget.counts["gpt"], 1)
 
     async def test_real_agent_tool_round_and_foundry_only_auth(self):
         with patch.dict("os.environ", {

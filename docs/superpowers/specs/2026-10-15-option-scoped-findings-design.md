@@ -344,3 +344,25 @@ call/tool/time limits or relax incomplete/truncation rejection.
 schema changes, retries, repair or normalization are authorized during or after
 that run. Record actual results without a readiness claim unless acceptance
 fully passes; all prior live authorization is consumed when run5 executes.
+
+## User-approved diagnostics and up to two additional live runs
+
+Run5 failed on Production's second request without a captured complete response
+or underlying exception chain; the exact cause was not established. Subsequent
+explicit approval permits diagnostic-only instrumentation, then at most two new
+Luna Responses pull-forward runs after offline verification. Preserve sanitized
+exception types/messages/causes through runtime, SDK/framework and GPT boundaries,
+HTTP status/body when present, native status/incomplete reason, request correlation
+and transport/read latency. Capture partial failures before/while reading bodies.
+Redact credentials, tokens, endpoint URLs, provider/continuation IDs and opaque
+encrypted reasoning from independent copies; never mutate actual model outputs.
+192 offline tests pass, including timeout/transport/HTTP/incomplete/partial-read
+failures and no-retry behavior. Prompts, schemas, ownership, budgets, pacing,
+tools, auth and fail-closed guards remain unchanged.
+
+Number new observations from run6. No retries/repair/normalization or changes
+between runs; stop early on full acceptance, or after the first auth/quota/network
+failure for user decision. Use a second run only if the first does not pass and
+distinct model failure evidence or needed diagnostics justify it. Report actual
+specialist completion, ownership/conflicts, final verdict if reached, timings
+and known versus unavailable usage. This approval does not imply demo readiness.

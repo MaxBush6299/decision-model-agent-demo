@@ -18,6 +18,7 @@ from .contracts import (
 )
 from .fixtures import ALLOWLIST, authoritative_constraints, delivery_position, domain_unknowns, fixture_records, fixture_payload, grounded_fixture_payload, issue_id, issue_text, scoped_option_disagreements, sourced_option_approvals
 from .runtime import AzureRuntime, CURRENT_CALL
+from .diagnostics import diagnostic_error
 
 ROLE_INSTRUCTIONS = {
     "supply-chain": (
@@ -226,9 +227,9 @@ class ExpertTeam:
                 value = response.value
         except (OpenAIError, AgentFrameworkException, ValidationError, ClientAuthenticationError) as exc:
             original = underlying_demo_error(exc)
-            if original:
-                raise original from exc
-            raise DemoError(f"{actor} model/auth/structured-output failure; no retry or repair was made.") from exc
+            message = (getattr(original, "diagnostic_message", str(original)) if original
+                       else f"{actor} model/auth/structured-output failure; no retry or repair was made.")
+            raise diagnostic_error(message, exc) from exc
         if not isinstance(value, output_type) or response.finish_reason != "stop":
             raise DemoError(f"{actor} returned no valid completed typed output.")
         return value
