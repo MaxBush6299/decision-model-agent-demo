@@ -568,8 +568,7 @@ def fixture_payload(record):
     return data
 
 
-def operational_position(records):
-    stock, build, shipment = (records[name] for name in ("read_inventory", "read_build", "read_shipment"))
+def production_position(build):
     cell = build.cell
     minutes = ceil(build.production_units * 60 / cell.units_per_hour) + cell.setup_minutes if cell else 0
     ready = (datetime.fromisoformat(cell.available_from) + timedelta(minutes=minutes + build.packing_minutes)
@@ -578,13 +577,82 @@ def operational_position(records):
                   - datetime.fromisoformat(cell.available_from)).total_seconds() / 60
                  - cell.reserved_minutes_other_orders if cell else 0)
     return {
+        "production_minutes": minutes, "available_cell_minutes": available,
+        "ready_at": ready.isoformat() if ready else None,
+    }
+
+
+def operational_position(records):
+    stock, build, shipment = (records[name] for name in ("read_inventory", "read_build", "read_shipment"))
+    return {
         "demand_units": sum(d.quantity for d in build.deliveries),
         "available_stock_units": stock.released_units - stock.allocated_finished_units,
         "available_material_units": stock.released_material_units - stock.materials_reserved_other_orders,
-        "production_minutes": minutes, "available_cell_minutes": available,
-        "ready_at": ready.isoformat() if ready else None,
+        **production_position(build),
         "arrival_at": (datetime.fromisoformat(shipment.pickup_at) + timedelta(minutes=shipment.transit_minutes)).isoformat(),
     }
+
+
+def grounded_fixture_payload(name, records, executed):
+    payload = fixture_payload(records[name])
+    if not getattr(records["read_build"], "options", ()):
+        return payload
+    derived = {"source": "deterministic_synthetic_record_calculation",
+               "source_evidence_ids": [records[name].evidence_id]}
+    if name == "read_build":
+        build = records[name]
+        derived["options"] = {}
+        for option in build.options:
+            projected = build.model_copy(update={
+                "cell": option.cell, "production_units": option.production_units,
+                "packing_minutes": option.packing_minutes,
+            })
+            position = production_position(projected)
+            derived["options"][option.option_id] = {
+                "new_units": option.production_units,
+                "setup_minutes": option.cell.setup_minutes,
+                "run_minutes": position["production_minutes"] - option.cell.setup_minutes,
+                "required_cell_minutes": position["production_minutes"],
+                "available_cell_minutes": position["available_cell_minutes"],
+                "reserved_cell_minutes": option.cell.reserved_minutes_other_orders,
+                "packing_minutes": option.packing_minutes,
+                "ready_at": position["ready_at"],
+            }
+        derived["measurement_scope"] = "Cell time excludes separate packing; ready_at is factory readiness, not customer arrival."
+    elif name in ("read_shipment", "read_approval_policy") and {
+        "read_shipment", "read_approval_policy"
+    }.issubset(executed):
+        shipment, policy = records["read_shipment"], records["read_approval_policy"]
+        authority = {
+            "source_evidence_ids": [shipment.evidence_id, policy.evidence_id],
+            "planner_limit_usd": policy.planner_limit_usd, "options": {},
+        }
+        for option in shipment.options:
+            cost = sum(leg.freight_cost_usd for leg in option.legs)
+            customer = next((c for c in policy.customer_delivery_options if c.option_id == option.option_id), None)
+            permission = None
+            if customer is not None:
+                permission = len(customer.deliveries) == len(option.legs) and all(
+                    leg.commitment_reference == customer.reference
+                    and leg.quantity == delivery.quantity
+                    and datetime.fromisoformat(delivery.window_start)
+                        <= datetime.fromisoformat(leg.pickup_at) + timedelta(minutes=leg.transit_minutes)
+                        <= datetime.fromisoformat(delivery.due_at)
+                    for leg, delivery in zip(option.legs, customer.deliveries)
+                )
+            authority["options"][option.option_id] = {
+                "aggregate_incremental_freight_usd": cost,
+                "freight_within_existing_authority": cost <= policy.planner_limit_usd
+                    and all(leg.approved_carrier and leg.slot_confirmed and bool(leg.confirmation_reference)
+                            for leg in option.legs),
+                "matches_documented_customer_planning_permission": permission,
+            }
+        derived["authority"] = authority
+        derived["measurement_scope"] = "Existing planning permission, not executed customer acceptance or new approval. No manufacturing assessment."
+    else:
+        return payload
+    payload["derived_evidence"] = derived
+    return payload
 
 
 def routing_context(scenario_id: ScenarioId):

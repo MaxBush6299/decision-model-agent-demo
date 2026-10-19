@@ -15,7 +15,7 @@ from .contracts import (
     RunState, validate_proposal, validate_references, Finding, ScopedFinding,
     SupplyFinding, ProductionFinding, CommercialFinding, validate_option_finding,
 )
-from .fixtures import ALLOWLIST, authoritative_constraints, delivery_position, domain_unknowns, fixture_records, fixture_payload, issue_id, issue_text
+from .fixtures import ALLOWLIST, authoritative_constraints, delivery_position, domain_unknowns, fixture_records, fixture_payload, grounded_fixture_payload, issue_id, issue_text
 from .runtime import AzureRuntime, CURRENT_CALL
 
 ROLE_INSTRUCTIONS = {
@@ -116,7 +116,8 @@ SCOPED_ROLE_INSTRUCTIONS = {
         "measurements and shipping dependencies; expedited service is separate from alternative carrier "
         "and policy approval. Derive uses_expedited_freight from expedited=true and "
         "uses_alternative_carrier from service_kind=approved_alternative in that option's legs. "
-        "Do not issue approval_requests; Commercial owns policy assessment."
+        "Do not issue approval_requests; Commercial owns policy assessment. "
+        "Without build evidence, production capacity is outside your scope, not proven feasible."
     ),
     "production": (
         "Compare EACH option's released-material context, cell qualification, actual unreserved slot "
@@ -135,7 +136,9 @@ SCOPED_ROLE_INSTRUCTIONS = {
         "for a real authority gap, not cost alone: compare aggregate incremental freight with the "
         "supplied limit and approved service. Fulfillment of an evidenced request does not change "
         "customer commitment beyond that request. Own customer/policy fields, not manufacturing or "
-        "expedited-service flags. Never claim contact, acceptance, approval or execution occurred."
+        "expedited-service flags. Never claim contact, acceptance, approval or execution occurred. "
+        "Use sourced authority checks when supplied; missing executed acceptance is not missing planning "
+        "permission. Do not certify production capacity without build evidence."
     ),
     "coordinator": (
         "You have no tools. Compare canonical records with every participating role's option_assessments. "
@@ -148,7 +151,9 @@ SCOPED_ROLE_INSTRUCTIONS = {
         "Cite every finding_refs agent/revision; with no specialists use empty "
         "finding_refs and canonical evidence. Unsupported retained claims are not endorsement: expose "
         "the mismatch in conflicts/brief, not silent correction or majority voting. Use existing "
-        "subject_key=proposal_feedback for a cited synthesis contradiction."
+        "subject_key=proposal_feedback for a cited synthesis contradiction. "
+        "Before claiming feasibility, compare finding measurements/authority against authoritative_constraints. "
+        "Keep unsupported retained approvals and unresolved null claims visible as contradictions, not facts."
     ),
 }
 
@@ -161,6 +166,8 @@ def agent_instructions(actor: str, scenario_id: ScenarioId) -> str:
             "assessment for EACH planning_option_ids entry. preferred_option_id may be null: comparison "
             "does not force a preference. No universal or unscoped dependency flags: use only your "
             "typed role's per-option fields. Null means unknown, never false; explain it. "
+            "Tool derived_evidence gives sourced arithmetic/authority checks, not a preferred answer. "
+            "Reconcile your measurements with those checks; do not substitute customer arrival for factory ready_at. "
             if actor != "coordinator" else ""
         )
         return "\n\n".join((
@@ -231,14 +238,15 @@ class FixtureGuard(FunctionMiddleware):
         self.runtime.budget.trace(f"Evidence {record.evidence_id}: {json.dumps(fixture_payload(record))}")
 
 
-def fixture_tool(name: str, selected_scenario: ScenarioId = SCENARIO_ID):
-    record = fixture_records(selected_scenario)[name]
+def fixture_tool(name: str, selected_scenario: ScenarioId = SCENARIO_ID, executed=None):
+    records = fixture_records(selected_scenario)
 
     @tool(name=name, description=f"Read fixed SYNTHETIC {selected_scenario} {name[5:]} evidence; no live data or writes.")
     async def read_fixture(scenario_id: ScenarioId) -> str:
         if scenario_id != selected_scenario:
             raise DemoError("Unsupported synthetic scenario.")
-        return json.dumps(fixture_payload(record))
+        return json.dumps(grounded_fixture_payload(
+            name, records, executed() if executed is not None else {name}))
 
     return read_fixture
 
@@ -269,7 +277,9 @@ class ExpertTeam:
         budget = self.runtime.budget
         if state.scenario_id != self.runtime.scenario_id:
             raise DemoError("Agent scenario differs from its bound runtime.")
-        tools = [fixture_tool(name, state.scenario_id) for name in ALLOWLIST.get(actor, ())]
+        tools = [fixture_tool(name, state.scenario_id,
+                              lambda: set(budget.tools[(actor, state.revision)]))
+                 for name in ALLOWLIST.get(actor, ())]
         middleware = [FixtureGuard(self.runtime, state, actor)] if tools else []
         provider = OpenAIChatCompletionClient(
             model=self.runtime.config.llm_deployment,

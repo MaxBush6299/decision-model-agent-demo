@@ -74,6 +74,44 @@ def scoped_payload(actor, scenario="order-pull-forward-v2"):
 
 
 class OptionContractTests(unittest.TestCase):
+    def test_grounding_uses_only_read_sources_and_preserves_records(self):
+        from decision_v2.fixtures import grounded_fixture_payload, fixture_payload
+        records = fixture_records("order-pull-forward-v2")
+        build = grounded_fixture_payload("read_build", records, {"read_build"})
+        self.assertEqual({k: v for k, v in build.items() if k != "derived_evidence"},
+                         fixture_payload(records["read_build"]))
+        grounding = build["derived_evidence"]
+        self.assertEqual(grounding["source_evidence_ids"], [records["read_build"].evidence_id])
+        for option in grounding["options"].values():
+            self.assertEqual(option["required_cell_minutes"], 150)
+            self.assertEqual(option["available_cell_minutes"], 180)
+            self.assertEqual(option["packing_minutes"], 60)
+            self.assertEqual(option["ready_at"], "2026-10-15T18:00:00-05:00")
+        policy_only = grounded_fixture_payload("read_approval_policy", records, {"read_approval_policy"})
+        self.assertNotIn("derived_evidence", policy_only)
+        both = grounded_fixture_payload("read_shipment", records, {"read_shipment", "read_approval_policy"})
+        authority = both["derived_evidence"]["authority"]
+        self.assertEqual(set(authority["source_evidence_ids"]),
+                         {records[n].evidence_id for n in ("read_shipment", "read_approval_policy")})
+        self.assertEqual(authority["options"]["full-early"]["freight_within_existing_authority"], True)
+        self.assertNotIn("selected_option_id", json.dumps(grounding))
+
+    def test_grounding_recomputes_authority_and_does_not_change_legacy_tools(self):
+        from decision_v2.fixtures import grounded_fixture_payload, fixture_payload
+        records = dict(fixture_records("order-pull-forward-v2"))
+        records["read_approval_policy"] = records["read_approval_policy"].model_copy(
+            update={"planner_limit_usd": 1000})
+        for last in ("read_shipment", "read_approval_policy"):
+            payload = grounded_fixture_payload(last, records, {"read_shipment", "read_approval_policy"})
+            options = payload["derived_evidence"]["authority"]["options"]
+            self.assertFalse(options["full-early"]["freight_within_existing_authority"])
+            self.assertTrue(options["split-standard"]["freight_within_existing_authority"])
+        for scenario in (SCENARIO_ID, "carrier-delay-v2"):
+            records = fixture_records(scenario)
+            for name in records:
+                self.assertEqual(grounded_fixture_payload(name, records, set(records)),
+                                 fixture_payload(records[name]))
+
     def test_non_owner_claims_are_rejected(self):
         from decision_v2.contracts import SupplyFinding, ProductionFinding, CommercialFinding
         for actor, model, extra in (
@@ -666,7 +704,8 @@ class FrameworkAgentTests(unittest.IsolatedAsyncioTestCase):
             raise ValueError("synthetic fixture failure")
         runtime = self.make_runtime()
         with patch("decision_v2.agents.fixture_tool",
-                   side_effect=lambda name, scenario: broken if name == "read_inventory" else fixture_tool(name, scenario)):
+                   side_effect=lambda name, scenario, executed: broken if name == "read_inventory"
+                   else fixture_tool(name, scenario, executed)):
             with self.assertRaises(DemoError):
                 await ExpertTeam(runtime).assess("supply-chain", RunState(evidence=initial_evidence()))
         self.assertEqual(runtime.budget.counts["gpt"], 1)
@@ -1550,6 +1589,26 @@ class ScenarioTests(unittest.IsolatedAsyncioTestCase):
 class ScopedFrameworkTests(unittest.IsolatedAsyncioTestCase):
     make_runtime = FrameworkAgentTests.make_runtime
     first_run = ScenarioTests.first_run
+
+    async def test_actual_tools_supply_grounding_after_successful_allowlisted_reads(self):
+        await self.first_run("order-pull-forward-v2")
+        observed = {}
+        for request, body in self.service.requests:
+            if "messages" not in body:
+                continue
+            actor = json.loads(next(m["content"] for m in body["messages"] if m["role"] == "user"))["actor"]
+            for message in body["messages"]:
+                if message["role"] == "tool":
+                    payload = json.loads(message["content"])
+                    if "derived_evidence" in payload:
+                        observed.setdefault(actor, []).append(payload["derived_evidence"])
+        self.assertEqual(set(observed), {"production", "commercial"})
+        production = observed["production"][0]
+        self.assertEqual(production["options"]["full-early"]["run_minutes"], 120)
+        commercial = next(d["authority"] for d in observed["commercial"] if "authority" in d)
+        self.assertTrue(commercial["options"]["full-early"]["freight_within_existing_authority"])
+        self.assertTrue(commercial["options"]["split-standard"]["matches_documented_customer_planning_permission"])
+        self.assertEqual(self.runtime.budget.counts, {"gpt": 7, "decision": 3})
 
     async def test_two_options_are_scoped_by_actual_role_without_a_required_preference(self):
         from decision_v2.contracts import SupplyFinding, ProductionFinding, CommercialFinding
