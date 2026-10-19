@@ -14,7 +14,7 @@ from .contracts import (
     AGENTS, SCENARIO_ID, ScenarioId, CoordinatedProposal, DemoError, ExpertFinding,
     RunState, validate_proposal, validate_references, Finding, ScopedFinding,
     SupplyFinding, ProductionFinding, CommercialFinding, validate_option_finding,
-    Conflict,
+    Conflict, owned_scoped_unknowns,
 )
 from .fixtures import ALLOWLIST, authoritative_constraints, delivery_position, domain_unknowns, fixture_records, fixture_payload, grounded_fixture_payload, issue_id, issue_text, scoped_option_disagreements, sourced_option_approvals
 from .runtime import AzureRuntime, CURRENT_CALL
@@ -64,7 +64,13 @@ ROLE_INSTRUCTIONS = {
 
 
 def agent_instructions(actor: str, scenario_id: ScenarioId) -> str:
-    return ROLE_INSTRUCTIONS[actor]
+    prompt = ROLE_INSTRUCTIONS[actor]
+    options = getattr(fixture_records(scenario_id)["read_build"], "options", ())
+    if actor in AGENTS and len(options) > 1:
+        keys = ", ".join(sorted(owned_scoped_unknowns(actor)))
+        prompt += (f" Raise unknown_keys only for your own domain ({keys}); describe other-domain "
+                   "evidence limits in prose, not as unknowns.")
+    return prompt
 
 
 def evidence_disagreements(state: RunState) -> list[Conflict]:

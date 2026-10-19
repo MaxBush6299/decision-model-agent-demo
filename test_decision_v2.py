@@ -1778,6 +1778,114 @@ class ScopedFrameworkTests(unittest.IsolatedAsyncioTestCase):
     make_runtime = FrameworkAgentTests.make_runtime
     first_run = ScenarioTests.first_run
 
+    def test_scoped_unknown_owner_map_covers_existing_keys_without_overlap(self):
+        from typing import get_args
+        from decision_v2.contracts import SCOPED_UNKNOWN_OWNERS, UnknownKey, owned_scoped_unknowns
+        self.assertEqual(set(SCOPED_UNKNOWN_OWNERS), set(get_args(UnknownKey)))
+        self.assertEqual(owned_scoped_unknowns("production"),
+                         {"production_capacity", "qualified_cell", "other_order_impact"})
+        self.assertEqual(owned_scoped_unknowns("supply-chain"), {
+            "shipment_arrival", "incoming_acceptance", "carrier_confirmation",
+            "delivery_window", "material_allocation",
+        })
+        self.assertEqual(owned_scoped_unknowns("commercial"), {
+            "customer_disposition", "customer_delivery_change", "customer_request",
+        })
+        self.assertEqual(owned_scoped_unknowns("coordinator"), {"proposal_feedback"})
+        with self.assertRaises(TypeError):
+            SCOPED_UNKNOWN_OWNERS["production_capacity"] = "supply-chain"
+
+    def test_every_scoped_unknown_is_accepted_only_for_its_owner_without_rewriting(self):
+        from decision_v2.contracts import (
+            SCOPED_UNKNOWN_OWNERS, SupplyFinding, ProductionFinding, CommercialFinding,
+            validate_option_finding,
+        )
+        classes = {"supply-chain": SupplyFinding, "production": ProductionFinding,
+                   "commercial": CommercialFinding}
+        for actor, model in classes.items():
+            for key, owner in SCOPED_UNKNOWN_OWNERS.items():
+                data = scoped_payload(actor)
+                data["unknown_keys"] = [key]
+                finding = model.model_validate_json(json.dumps(data))
+                before = finding.model_dump_json()
+                if actor == owner:
+                    validate_option_finding(finding, {"full-early", "split-standard"}, set(finding.evidence_ids))
+                else:
+                    with self.assertRaisesRegex(DemoError, rf"{actor}.*foreign-domain unknown.*{key}"):
+                        validate_option_finding(finding, {"full-early", "split-standard"}, set(finding.evidence_ids))
+                self.assertEqual(finding.model_dump_json(), before)
+
+    def test_scoped_required_unknowns_follow_single_owners_but_legacy_is_unchanged(self):
+        failed = {
+            "carrier_confirmation", "delivery_window", "production_capacity", "qualified_cell",
+            "material_allocation", "customer_request", "other_order_impact",
+        }
+        with patch("decision_v2.fixtures.operational_checks", return_value={key: False for key in failed}):
+            for scenario in ("order-pull-forward-v2", "production-resequence-v2"):
+                with self.subTest(scenario=scenario):
+                    by_actor = {actor: domain_unknowns(actor, scenario) for actor in AGENTS}
+                    self.assertEqual(set.union(*by_actor.values()), failed)
+                    self.assertEqual(sum(map(len, by_actor.values())), len(failed))
+                    self.assertEqual(by_actor["production"],
+                                     {"production_capacity", "qualified_cell", "other_order_impact"})
+                    self.assertEqual(by_actor["commercial"], {"customer_request"})
+            self.assertIn("material_allocation", domain_unknowns("production", "carrier-delay-v2"))
+            self.assertIn("carrier_confirmation", domain_unknowns("commercial", "carrier-delay-v2"))
+        self.assertEqual(domain_unknowns("supply-chain"), {"shipment_arrival", "incoming_acceptance"})
+
+    async def test_foreign_unknown_stops_scoped_agent_before_join_on_both_apis(self):
+        for profile in ("standard", "gpt-6-luna"):
+            service = MockResponsesFoundry() if profile == "gpt-6-luna" else MockFoundry()
+            base = MockFoundry()
+            def alter(request, body):
+                response = base(request)
+                if request.url.path.endswith("systemone"):
+                    return response
+                payload = response.json()
+                message = payload["choices"][0]["message"]
+                if message.get("content"):
+                    record = json.loads(message["content"])
+                    record["unknown_keys"] = ["production_capacity"]
+                    message["content"] = json.dumps(record)
+                return httpx.Response(200, json=payload)
+            service.override = alter
+            runtime = self.make_runtime(service, "order-pull-forward-v2", llm_profile=profile)
+            state = RunState(scenario_id=runtime.scenario_id, evidence=initial_evidence(runtime.scenario_id))
+            with self.subTest(profile=profile), self.assertRaisesRegex(
+                DemoError, "supply-chain.*foreign-domain unknown.*production_capacity",
+            ):
+                await ExpertTeam(runtime).assess("supply-chain", state)
+            self.assertEqual(runtime.budget.counts["gpt"], 2)
+            self.assertEqual(len(runtime.budget.tools[("supply-chain", 0)]), 2)
+            self.assertEqual(state.findings, {})
+
+    async def test_coordinator_preserves_owned_unknown_or_fails_when_it_is_omitted(self):
+        for omit in (False, True):
+            service, base = MockFoundry(), MockFoundry()
+            def alter(request, body):
+                response = base(request)
+                if request.url.path.endswith("systemone"):
+                    return response
+                payload = response.json()
+                message = payload["choices"][0]["message"]
+                if message.get("content"):
+                    record = json.loads(message["content"])
+                    if record.get("agent_id") == "production":
+                        record["unknown_keys"] = ["production_capacity"]
+                    if "finding_refs" in record and omit:
+                        record["unknown_keys"] = []
+                    message["content"] = json.dumps(record)
+                return httpx.Response(200, json=payload)
+            service.override = alter
+            if omit:
+                with self.assertRaisesRegex(DemoError, "Coordinator omitted unresolved unknown_keys"):
+                    await self.first_run("order-pull-forward-v2", service)
+            else:
+                runtime, state, workflow, events = await self.first_run("order-pull-forward-v2", service)
+                self.assertEqual(state.findings["production"].unknown_keys, ["production_capacity"])
+                self.assertEqual(state.proposal.unknown_keys, ["production_capacity"])
+                self.assertTrue(any(event.type == "request_info" for event in events))
+
     def test_sourced_approvals_follow_fixture_authority_not_specialist_flags(self):
         from decision_v2.fixtures import sourced_option_approvals
         records = dict(fixture_records("order-pull-forward-v2"))
@@ -2140,7 +2248,20 @@ class RoleInstructionTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(hasattr(agents, removed))
         for actor in (*AGENTS, "coordinator"):
             prompt = agents.agent_instructions(actor, SCENARIO_ID)
-            self.assertEqual(prompt, agents.agent_instructions(actor, "order-pull-forward-v2"))
+            self.assertEqual(prompt, agents.ROLE_INSTRUCTIONS[actor])
+            self.assertEqual(prompt, agents.agent_instructions(actor, "carrier-delay-v2"))
+            scoped = agents.agent_instructions(actor, "order-pull-forward-v2")
+            self.assertEqual(scoped, agents.agent_instructions(actor, "production-resequence-v2"))
+            if actor == "coordinator":
+                self.assertEqual(scoped, prompt)
+            else:
+                from decision_v2.contracts import owned_scoped_unknowns
+                self.assertTrue(scoped.startswith(prompt))
+                self.assertIn("only for your own domain", scoped)
+                self.assertIn("evidence limits in prose, not as unknowns", scoped)
+                for key in owned_scoped_unknowns(actor):
+                    self.assertIn(key, scoped)
+                self.assertLess(len(scoped.split()), 250)
             self.assertLess(len(prompt.split()), 220)
             self.assertIn("1200", prompt)
             self.assertNotIn("characters", prompt)
@@ -2168,6 +2289,8 @@ class RoleInstructionTests(unittest.IsolatedAsyncioTestCase):
                 for phrase in ("option_assessments", "required_unknown_keys", "previous_conflicts",
                                "untrusted", "unverified", "concise", "1200"):
                     self.assertIn(phrase, prompt)
+                self.assertIn("only for your own domain", prompt)
+                self.assertIn("evidence limits in prose, not as unknowns", prompt)
                 self.assertNotIn("finding_refs", prompt)
                 self.assertNotIn("characters", prompt)
                 self.assertNotIn("containment_required=true", prompt)

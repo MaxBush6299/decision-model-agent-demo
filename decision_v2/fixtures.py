@@ -11,7 +11,7 @@ from .contracts import (
     CoordinatedProposal, CustomerDeliveryChange, DemoError, HumanEvidence,
     StrictModel, SCENARIO_ID, SCENARIO_IDS, ScenarioId,
     ScopedFinding, SupplyOptionAssessment, ProductionOptionAssessment,
-    dependency_claims, option_assessment,
+    dependency_claims, option_assessment, owned_scoped_unknowns,
 )
 
 SNAPSHOT = "2026-10-15T14:00:00-05:00"
@@ -135,6 +135,8 @@ def domain_unknowns(actor: str, scenario_id: ScenarioId = SCENARIO_ID) -> set[st
         if actor == "coordinator":
             return set()
         checks = operational_checks(records)
+        if len(records["read_build"].options) > 1:
+            return {key for key in owned_scoped_unknowns(actor) if key in checks and not checks[key]}
         domains = {
             "supply-chain": {"carrier_confirmation", "delivery_window", "material_allocation"},
             "production": {"production_capacity", "qualified_cell", "material_allocation", "other_order_impact"},

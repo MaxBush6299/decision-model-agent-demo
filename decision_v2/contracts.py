@@ -1,6 +1,7 @@
 import math
 from datetime import datetime
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Annotated, Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -27,8 +28,26 @@ UnknownKey = Literal[
     "carrier_confirmation", "delivery_window", "production_capacity", "qualified_cell",
     "material_allocation", "customer_request", "other_order_impact",
 ]
+SCOPED_UNKNOWN_OWNERS = MappingProxyType({
+    "shipment_arrival": "supply-chain",
+    "incoming_acceptance": "supply-chain",
+    "carrier_confirmation": "supply-chain",
+    "delivery_window": "supply-chain",
+    "material_allocation": "supply-chain",
+    "production_capacity": "production",
+    "qualified_cell": "production",
+    "other_order_impact": "production",
+    "customer_disposition": "commercial",
+    "customer_delivery_change": "commercial",
+    "customer_request": "commercial",
+    "proposal_feedback": "coordinator",
+})
 Text = Annotated[str, Field(min_length=1, max_length=2000)]
 EvidenceId = Annotated[str, Field(min_length=1, max_length=120)]
+
+
+def owned_scoped_unknowns(actor: str) -> set[str]:
+    return {key for key, owner in SCOPED_UNKNOWN_OWNERS.items() if owner == actor}
 
 
 class DemoError(RuntimeError):
@@ -254,6 +273,10 @@ Finding = ExpertFinding | ScopedFinding
 
 
 def validate_option_finding(finding: ScopedFinding, option_ids: set[str], allowed: set[str]) -> None:
+    foreign = set(finding.unknown_keys) - owned_scoped_unknowns(finding.agent_id)
+    if foreign:
+        details = ", ".join(f"{key} (owner: {SCOPED_UNKNOWN_OWNERS[key]})" for key in sorted(foreign))
+        raise DemoError(f"{finding.agent_id} raised foreign-domain unknown_keys: {details}; no repair was made.")
     ids = [assessment.option_id for assessment in finding.option_assessments]
     if len(ids) != len(set(ids)) or set(ids) != option_ids:
         raise DemoError("Specialist must assess each supplied planning option exactly once.")

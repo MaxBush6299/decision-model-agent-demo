@@ -277,3 +277,39 @@ the two remaining possible runs were not spent chasing a pass. No subsequent
 code/prompt/schema changes, repairs or raw claim normalization occurred.
 Responses compatibility is live-verified, not business readiness. Full per-run
 usage/latency/results and remaining limitations are recorded in `docs\v2.md`.
+
+## User-directed scoped unknown ownership
+
+The user selected single-domain ownership of specialist unknowns, offline only.
+Define one immutable owner for every existing unknown key: Supply owns shipment/
+acceptance/carrier/window/material allocation; Production owns capacity/
+qualification/other-order impact; Commercial owns customer disposition/delivery
+change/request; `proposal_feedback` is Coordinator-only. No new unknown keys or
+wire schema keywords are introduced. Apply this to the existing scoped two-option
+contracts, including Production-resequence, while preserving Quality and legacy
+single-plan behavior.
+
+Append concise owned-key guidance only to scoped specialist prompts: state
+other-domain evidence limits in prose instead of raising them as unknowns.
+Use the same owner mapping for scoped canonical required unknowns, preventing
+overlapping prior domain checks from generating foreign-key instructions.
+The existing option-finding validator rejects foreign-domain `unknown_keys`
+with actor/key/owner details before Coordinator dispatch, without modifying
+the response, clearing claims or making a repair call. This fail-closed
+contract boundary matches existing option/provenance guards; do not convert
+an invalid owner into an invented sourced business conflict.
+
+Coordinator must still preserve all accepted owned unknowns; its existing
+unknown/conflict preservation and human-review semantics remain unchanged.
+Conflict subjects are not restricted by this unknown-key ownership rule.
+Test complete key coverage/ownership, unchanged raw findings, both API paths,
+canonical required-key ownership, correct Coordinator propagation/rejection,
+and Quality/legacy regressions. Keep all tools, prompts outside this scoped
+addition, caps, auth, Luna Responses and default Chat Completions setup unchanged.
+No live inference is authorized for this revision; two remaining possible
+runs stay unused until the user separately confirms their use.
+
+185 offline tests pass. Original prior-live Supply findings replay unchanged
+and fail specifically on foreign Production keys; the corresponding original
+Production findings pass the ownership/option contract. No new inference or
+live-readiness claim is implied.
