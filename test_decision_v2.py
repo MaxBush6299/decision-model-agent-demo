@@ -474,8 +474,7 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
         encoded = json.dumps(body).encode()
         self.assertEqual(await budget.pace_tokens(encoded), (len(encoded) + 2) // 3 + 2400)
         near_limit = {"input": "x" * 22800, "max_output_tokens": 2400}
-        with self.assertRaisesRegex(DemoError, "10,000-token"):
-            await budget.pace_tokens(json.dumps(near_limit).encode())
+        self.assertGreater(await budget.pace_tokens(json.dumps(near_limit).encode()), 10000)
         near_limit["max_output_tokens"] = 1200
         self.assertLess(await budget.pace_tokens(json.dumps(near_limit).encode()), 10000)
         async with httpx.AsyncClient(transport=transport, trust_env=False) as client:
@@ -485,6 +484,31 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
                 await client.post(config.endpoint + "/openai/v1/responses", json=body)
         self.assertEqual(len(seen), 1)
         self.assertEqual(budget.counts["gpt"], 1)
+
+    async def test_oversized_request_dispatches_after_pacing_and_paces_the_next_request(self):
+        now, sleeps, seen = [0.], [], []
+        async def sleep(seconds):
+            sleeps.append(seconds)
+            now[0] += seconds
+        budget = Budget(clock=lambda: now[0], sleep=sleep)
+        budget.token_window.append((0., 4000))
+        config = Config("https://example.services.ai.azure.com", "decision", "luna", "gpt-6-luna")
+        def service(request):
+            seen.append(json.loads(request.content))
+            return httpx.Response(200, json=responses_payload({"content": "{}"}))
+        transport = GuardedTransport(config, budget, httpx.MockTransport(service))
+        body = {"input": "x" * 27000, "max_output_tokens": 2400}
+        async with httpx.AsyncClient(transport=transport, trust_env=False) as client:
+            async with budget.stage("gpt", "coordinator", 0):
+                response = await client.post(config.endpoint + "/openai/v1/responses", json=body)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(seen, [body])
+        self.assertEqual(sleeps, [60.])
+        self.assertEqual(budget.counts["gpt"], 1)
+        self.assertGreater(budget.token_window[-1][1], 10000)
+        await budget.pace_tokens(json.dumps({"max_output_tokens": 2400}).encode())
+        self.assertEqual(sleeps, [60., 60.])
+        self.assertEqual(now[0], 120.)
 
     async def test_specialist_fourth_attempt_blocked(self):
         budget = Budget()

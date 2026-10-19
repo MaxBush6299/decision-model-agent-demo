@@ -378,3 +378,20 @@ and local-budget exception types/messages. Attempts2 Decision-1 /6 GPT,6 tools,
 314.750s; all dispatched calls HTTP200. The second newly authorized run remains
 unused under the non-model quota/budget stop rule, pending user decision.
 No code/prompt/schema/budget change or retry followed; acceptance is not achieved.
+
+## User-directed local oversized-request guard removal and run7
+
+Following run6, the user explicitly approved removal of the local pre-dispatch
+individual-request estimated-token rejection. Keep the estimate, full output
+reservation and rolling-window pacing: an estimate above10,000 waits for the
+existing window to empty, then dispatches unchanged, retaining its full estimate
+to pace the next request. This supersedes previous local single-request rejection
+requirements, not the unchanged service limits. Do not alter provider/cloud
+quotas, prompts, schemas, ownership/business/truncation guards, output allowances,
+call/tool/time caps, auth, tools, defaults or no-retry behavior. Time deadlines
+still apply to any pacing wait; provider429/errors stop with diagnostics.
+193 offline tests pass, including oversized dispatch and waits before/after it.
+Then consume exactly the remaining newly authorized live run as run7, recording
+actual Coordinator/conflicts/final Decision-1 results without repairs or a
+readiness claim unless full acceptance passes. No changes during or after run7
+other than persisting sanitized observations; no push.

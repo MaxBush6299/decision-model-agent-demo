@@ -138,14 +138,12 @@ class Budget:
         estimate = (len(request_body) + 2) // 3 + body.get(
             "max_output_tokens", body.get("max_completion_tokens", body.get("max_tokens", 1200)),
         )
-        if estimate > 10000:
-            raise DemoError("GPT request exceeds the demo's conservative 10,000-token minute budget.")
         while True:
             self.remaining()
             now = self.clock()
             while self.token_window and now - self.token_window[0][0] >= 60:
                 self.token_window.popleft()
-            if sum(tokens for _, tokens in self.token_window) + estimate <= 10000:
+            if not self.token_window or sum(tokens for _, tokens in self.token_window) + estimate <= 10000:
                 return estimate
             wait = 60 - (now - self.token_window[0][0])
             if wait >= self.remaining():
