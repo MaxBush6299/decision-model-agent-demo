@@ -21,6 +21,12 @@ test, then the500-character prose-bound fix and one further live test. The latte
 reached final validation but retained business contradictions; live acceptance
 is not achieved. Full observations are recorded in `docs\v2.md`.
 
+**19 October follow-up:** Separately approved sourced grounding is committed as
+`3bd6b2e`;166 offline tests pass. The single authorized live test stopped on
+Supply's527-character assessment exceeding the retained500-character bound.
+Downstream live effectiveness is unobserved. No retries or additional inference;
+this is a blocked acceptance result, not a ready demo.
+
 ## Global Constraints
 
 - Approved spec: `docs\superpowers\specs\2026-10-15-option-scoped-findings-design.md`.

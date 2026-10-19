@@ -147,3 +147,12 @@ and returned pending review. Scope/joins held, but Production numeric/time error
 Commercial unknowns/unsupported authority requests and Coordinator contradictions
 prevent live readiness. See `docs\v2.md` for exact observations. No additional
 test is authorized by this specification.
+
+19 October follow-up: the user separately approved sourced arithmetic/authority
+grounding and one live run. Existing build tools now expose canonical calculations;
+joint Commercial checks appear only after both shipment/policy reads. No new
+source access, option selection or output normalization is introduced.166 offline
+tests pass, including actual framework payload/source-boundary checks. The one
+live run stopped at Supply's527-character prose versus the retained500-character
+bound, before downstream grounding could be assessed. Live acceptance therefore
+remains unachieved; no further inference is authorized.
