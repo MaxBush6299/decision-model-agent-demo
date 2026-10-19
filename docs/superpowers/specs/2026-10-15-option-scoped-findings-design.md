@@ -261,3 +261,19 @@ refused/failed/malformed output explicitly. Include replay/output allowance in
 the same10,000TPM pacing; retain all role tools/caps, schemas, prompts, source
 guards, Entra credentials and Decision-1/default Chat Completions behavior.
 Resume the existing bounded live allowance only after offline verification.
+
+180 offline tests passed. Subsequent live runs2/3 on unchanged `e8ee569` completed
+all three specialists and produced Coordinator responses through Responses;
+7 GPT /6 tools per run, all HTTP200/completed, no truncation. Typed per-option
+arithmetic, dependency and sourced-approval checks matched canonical evidence.
+Run2 retained Supply's cross-domain `production_capacity` unknown despite
+Production's proven figures; final Decision-1 Needs revision76.3346%,
+pending/exit2,3 Decision-1 calls,204.078s. Run3 Supply again marked capacity
+unknown and also `qualified_cell`; Coordinator omitted both, so the existing
+preservation guard failed before final validation,2 Decision-1 calls,197.578s.
+Run2 also misdated the protected reservation as Friday in Supply prose.
+The repeated underlying unknown-boundary problem had different terminal symptoms;
+the two remaining possible runs were not spent chasing a pass. No subsequent
+code/prompt/schema changes, repairs or raw claim normalization occurred.
+Responses compatibility is live-verified, not business readiness. Full per-run
+usage/latency/results and remaining limitations are recorded in `docs\v2.md`.
