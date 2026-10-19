@@ -27,6 +27,13 @@ Supply's527-character assessment exceeding the retained500-character bound.
 Downstream live effectiveness is unobserved. No retries or additional inference;
 this is a blocked acceptance result, not a ready demo.
 
+**Subsequent user-directed change:** Remove generated narrative character caps
+across scoped/legacy/Quality findings, per-option assessments, proposal briefs and
+conflict descriptions. Retain nonblank strict strings, the1,200-token allowance,
+all input/ID/reference/list/provenance/business guards and incomplete-finish
+failure.167 offline tests pass; the saved527-character response replays unchanged.
+No live inference was performed or authorized for this change.
+
 ## Global Constraints
 
 - Approved spec: `docs\superpowers\specs\2026-10-15-option-scoped-findings-design.md`.

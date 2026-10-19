@@ -120,7 +120,7 @@ def parse_choices(payload: object, names: list[str], options: tuple[str, ...]) -
 class Conflict(StrictModel):
     subject_key: UnknownKey
     evidence_ids: list[EvidenceId] = Field(min_length=1, max_length=12)
-    description: str = Field(min_length=1, max_length=500)
+    description: str = Field(min_length=1)
 
 
 class FindingRef(StrictModel):
@@ -147,8 +147,8 @@ class ExpertFinding(PlanDependencies):
     agent_id: AgentId
     revision: Literal[0, 1]
     selected_option_id: Annotated[str, Field(min_length=1, max_length=64)] | None = None
-    assessment: Annotated[str, Field(min_length=1, max_length=500)]
-    implication: Annotated[str, Field(min_length=1, max_length=500)]
+    assessment: Annotated[str, Field(min_length=1)]
+    implication: Annotated[str, Field(min_length=1)]
     recommended_action: Action
     uses_held_stock: bool
     uses_expedited_freight: bool
@@ -167,7 +167,7 @@ class ExpertFinding(PlanDependencies):
 
 class OptionEvidence(StrictModel):
     option_id: Annotated[str, Field(min_length=1, max_length=64)]
-    assessment: Annotated[str, Field(min_length=1, max_length=500)]
+    assessment: Annotated[str, Field(min_length=1)]
     evidence_ids: list[EvidenceId] = Field(min_length=1, max_length=12)
 
 
@@ -196,8 +196,8 @@ class CommercialOptionAssessment(OptionEvidence):
 
 class ScopedFindingBase(StrictModel):
     revision: Literal[0, 1]
-    assessment: Annotated[str, Field(min_length=1, max_length=500)]
-    implication: Annotated[str, Field(min_length=1, max_length=500)]
+    assessment: Annotated[str, Field(min_length=1)]
+    implication: Annotated[str, Field(min_length=1)]
     preferred_option_id: Annotated[str, Field(min_length=1, max_length=64)] | None = None
     uses_held_stock: bool
     containment_required: bool
@@ -292,7 +292,7 @@ class CoordinatedProposal(PlanDependencies):
     uses_expedited_freight: bool
     containment_required: bool
     changes_customer_commitment: bool
-    brief: Annotated[str, Field(min_length=1, max_length=1000)]
+    brief: Annotated[str, Field(min_length=1)]
     finding_refs: list[FindingRef] = Field(max_length=3)
     evidence_ids: list[EvidenceId] = Field(max_length=12)
     unknown_keys: list[UnknownKey] = Field(max_length=12)

@@ -55,9 +55,12 @@ No action, preference or finding grants execution/customer/spending authority.
 
 After an authorized live response exceeded the new300/200-character prose caps,
 the user approved aligning specialist text fields with the existing500-character
-legacy bound. Concision targets remain300 overall/200 per option; the hard bound
-is500 without truncation. The1,200-token ceiling and all non-prose constraints
-remain unchanged.
+legacy bound. That intermediate bound was subsequently superseded by explicit
+user direction to remove generated prose character caps. Generated assessments,
+implications, option narratives, proposal briefs and conflict descriptions now
+require nonblank strict strings with no maximum character count. Prompt concision
+is soft style without numeric character instructions. The1,200-token ceiling,
+incomplete-finish failures and all non-prose constraints remain unchanged.
 
 Global uncertainty/conflict preservation remains unchanged. Safety claims
 such as held-stock use or containment remain explicit at finding level and
@@ -111,7 +114,7 @@ two-option payloads fit the existing request budget rather than raising it.
 If a response is truncated or cannot fit the budget, fail explicitly.
 
 Implementation retains offset-aware timestamp types and all local validation
-bounds. New finding wire schemas omit unsupported JSON Schema constraints
+bounds except generated prose maxima. New finding wire schemas omit unsupported JSON Schema constraints
 (including `format` and length/range limits), following the
 [Microsoft Learn structured-output subset](https://learn.microsoft.com/azure/ai-foundry/openai/how-to/structured-outputs#supported-schemas-and-limitations);
 the actual framework-emitted schema is checked offline. This serialization
@@ -156,3 +159,10 @@ tests pass, including actual framework payload/source-boundary checks. The one
 live run stopped at Supply's527-character prose versus the retained500-character
 bound, before downstream grounding could be assessed. Live acceptance therefore
 remains unachieved; no further inference is authorized.
+
+The subsequent user-requested character-cap removal is verified by167 offline
+tests, including long scoped/legacy/Quality/proposal/conflict narratives, retained
+empty/type rejection and actual emitted schemas without prose `maxLength`.
+The retained527-character live response parses unchanged and passes its existing
+typed Supply/citation/option checks offline. This does not establish downstream
+business validity or live readiness. No new live inference was authorized or run.

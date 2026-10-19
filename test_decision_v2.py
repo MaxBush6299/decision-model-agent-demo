@@ -165,25 +165,24 @@ class OptionContractTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             ProductionFinding.model_validate_json(json.dumps(data))
 
-    def test_scoped_prose_uses_legacy_500_character_bound_without_truncation(self):
-        from decision_v2.contracts import SupplyFinding
-        data = scoped_payload("supply-chain")
-        data["assessment"] = "A" * 500
-        data["implication"] = "B" * 500
-        for assessment in data["option_assessments"]:
-            assessment["assessment"] = "C" * 500
-        try:
-            finding = SupplyFinding.model_validate_json(json.dumps(data))
-        except ValidationError as exc:
-            self.fail(f"Legacy-bounded scoped prose must remain valid: {exc}")
-        self.assertEqual(finding.model_dump(), data)
-        for target, key in ((data, "assessment"), (data, "implication"),
-                            (data["option_assessments"][0], "assessment")):
-            previous = target[key]
-            target[key] = "D" * 501
-            with self.subTest(key=key), self.assertRaises(ValidationError):
-                SupplyFinding.model_validate_json(json.dumps(data))
-            target[key] = previous
+    def test_scoped_narratives_have_no_character_ceiling_but_remain_nonempty_strings(self):
+        from decision_v2.contracts import SupplyFinding, ProductionFinding, CommercialFinding
+        for actor, model in (("supply-chain", SupplyFinding), ("production", ProductionFinding),
+                             ("commercial", CommercialFinding)):
+            data = scoped_payload(actor)
+            data.update(assessment="A" * 527, implication="B" * 3000)
+            for assessment in data["option_assessments"]:
+                assessment["assessment"] = "C" * 3000
+            finding = model.model_validate_json(json.dumps(data))
+            self.assertEqual(finding.model_dump(mode="json"), data)
+            for target, key in ((data, "assessment"), (data, "implication"),
+                                (data["option_assessments"][0], "assessment")):
+                previous = target[key]
+                for invalid in ("", "   ", 123, None, []):
+                    target[key] = invalid
+                    with self.subTest(actor=actor, key=key, invalid=invalid), self.assertRaises(ValidationError):
+                        model.model_validate_json(json.dumps(data))
+                target[key] = previous
 
 
 class OptionPresentationTests(unittest.TestCase):
@@ -1590,6 +1589,48 @@ class ScopedFrameworkTests(unittest.IsolatedAsyncioTestCase):
     make_runtime = FrameworkAgentTests.make_runtime
     first_run = ScenarioTests.first_run
 
+    async def test_legacy_and_proposal_narratives_are_not_character_bounded(self):
+        from decision_v2.contracts import Conflict
+        for scenario in (SCENARIO_ID, "order-pull-forward-v2"):
+            runtime, state, workflow, events = await self.first_run(scenario)
+            outputs = [*state.findings.values(), state.proposal]
+            for original in outputs:
+                data = original.model_dump(mode="json")
+                for key in ("assessment", "implication", "brief"):
+                    if key not in data:
+                        continue
+                    data[key] = "Long model-written narrative. " * 100
+                    parsed = type(original).model_validate_json(json.dumps(data))
+                    self.assertEqual(getattr(parsed, key), data[key])
+                    previous = data[key]
+                    for invalid in ("", "   ", 123, None):
+                        data[key] = invalid
+                        with self.subTest(scenario=scenario, key=key, invalid=invalid), self.assertRaises(ValidationError):
+                            type(original).model_validate_json(json.dumps(data))
+                    data[key] = previous
+            for request, body in self.service.requests:
+                if "response_format" not in body:
+                    continue
+                schema = body["response_format"]["json_schema"]["schema"]
+                def check(node):
+                    if isinstance(node, dict):
+                        for key, field in node.get("properties", {}).items():
+                            if key in ("assessment", "implication", "brief", "description"):
+                                self.assertNotIn("maxLength", field)
+                        for child in node.values():
+                            check(child)
+                    elif isinstance(node, list):
+                        for child in node:
+                            check(child)
+                check(schema)
+                self.assertEqual(body["max_completion_tokens"], 1200)
+        conflict = dict(subject_key="proposal_feedback", evidence_ids=["issue:quality-hold-v2"],
+                        description="Contradictory model evidence. " * 100)
+        self.assertEqual(Conflict.model_validate(conflict).description, conflict["description"])
+        for invalid in ("", "  ", 123, None):
+            with self.subTest(description=invalid), self.assertRaises(ValidationError):
+                Conflict.model_validate({**conflict, "description": invalid})
+
     async def test_actual_tools_supply_grounding_after_successful_allowlisted_reads(self):
         await self.first_run("order-pull-forward-v2")
         observed = {}
@@ -1794,9 +1835,10 @@ class RoleInstructionTests(unittest.IsolatedAsyncioTestCase):
                 for phrase in phrases:
                     self.assertIn(phrase, prompt)
                 for phrase in ("preferred_option_id", "required_unknown_keys", "previous_conflicts",
-                               "untrusted", "unverified", "under 300 characters", "1200"):
+                               "untrusted", "unverified", "concise", "1200"):
                     self.assertIn(phrase, prompt)
                 self.assertNotIn("finding_refs", prompt)
+                self.assertNotIn("characters", prompt)
                 self.assertNotIn("containment_required=true", prompt)
                 self.assertIn("allowlisted", prompt)
         coordinator = prompts["coordinator"]
@@ -1804,6 +1846,7 @@ class RoleInstructionTests(unittest.IsolatedAsyncioTestCase):
                        "safety_approval_requests"):
             self.assertIn(phrase, coordinator)
         self.assertIn("no tools", coordinator.lower())
+        self.assertNotIn("characters", coordinator)
         self.assertEqual(runtime.budget.counts, {"gpt": 7, "decision": 3})
         self.assertEqual(set(state.findings), set(AGENTS))
 
@@ -2044,7 +2087,8 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         request = next(body for req, body in self.service.requests if req.url.path.endswith("/chat/completions"))
         instructions = " ".join(str(message["content"]) for message in request["messages"]
                                 if message["role"] in ("system", "developer"))
-        self.assertIn("under 300 characters", instructions)
+        self.assertIn("concise", instructions)
+        self.assertNotIn("characters", instructions)
         self.assertEqual(request["max_completion_tokens"], 1200)
 
     async def test_transport_paces_token_heavy_requests_below_request_count_limit(self):
