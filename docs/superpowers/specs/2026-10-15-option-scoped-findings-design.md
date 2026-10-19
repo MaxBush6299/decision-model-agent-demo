@@ -366,3 +366,15 @@ failure for user decision. Use a second run only if the first does not pass and
 distinct model failure evidence or needed diagnostics justify it. Report actual
 specialist completion, ownership/conflicts, final verdict if reached, timings
 and known versus unavailable usage. This approval does not imply demo readiness.
+
+Run6 on `7c0e998` completed all three specialists with owned unknowns/conflicts
+empty and no typed source discrepancies, including correct150/180 cell minutes,
+60 separate packing minutes, Thursday18:00 readiness and1800/0 freight within2500
+authority. Coordinator dispatch was blocked by the unchanged local10,000-token
+single-request estimate. Offline framework reconstruction with the saved findings
+gave25,625 request bytes /8,542 estimated input +2,400 output =10,942; no live
+Coordinator or final Decision-1 verdict exists. Diagnostics retain the framework
+and local-budget exception types/messages. Attempts2 Decision-1 /6 GPT,6 tools,
+314.750s; all dispatched calls HTTP200. The second newly authorized run remains
+unused under the non-model quota/budget stop rule, pending user decision.
+No code/prompt/schema/budget change or retry followed; acceptance is not achieved.
