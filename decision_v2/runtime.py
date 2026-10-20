@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from time import monotonic
+from uuid import uuid4
 from typing import Awaitable, Callable, TypeVar
 from urllib.parse import urlsplit
 from urllib.request import getproxies
@@ -34,6 +35,35 @@ class Config:
     decision_deployment: str
     llm_deployment: str
     llm_profile: str = "standard"
+    # Opt-in Azure API Management gateway profile; empty keeps the direct Foundry path.
+    apim_scope: str = ""
+    apim_llm_api: str = ""
+    apim_decision_api: str = ""
+
+    @property
+    def apim(self) -> bool:
+        return bool(self.apim_scope)
+
+    @property
+    def gpt_path(self) -> str:
+        suffix = "/v1/responses" if self.llm_profile == "gpt-6-luna" else "/v1/chat/completions"
+        return f"/{self.apim_llm_api}{suffix}" if self.apim else "/openai" + suffix
+
+    @property
+    def gpt_base_url(self) -> str:
+        return self.endpoint + (f"/{self.apim_llm_api}/v1/" if self.apim else "/openai/v1/")
+
+    @property
+    def decision_path(self) -> str:
+        return (f"/{self.apim_decision_api}" if self.apim else "") + "/providers/microsoft/v1/systemone"
+
+    @property
+    def token_scope(self) -> str:
+        return self.apim_scope or LLM_SCOPE
+
+    @property
+    def decision_scope(self) -> str:
+        return self.apim_scope or DECISION_SCOPE
 
     @property
     def gpt_output_tokens(self) -> int:
@@ -46,27 +76,39 @@ class Config:
             parsed.scheme != "https" or parsed.username or parsed.password
             or parsed.netloc != host or parsed.path not in ("", "/")
             or parsed.query or parsed.fragment
-            or not host.endswith((".services.ai.azure.com", ".openai.azure.com"))
+            or (not host.endswith((".services.ai.azure.com", ".openai.azure.com")) and not self.apim)
         ):
             raise DemoError("Endpoint must be an HTTPS Azure resource root without credentials, port, or API path.")
         if any(not value.strip() for value in (self.decision_deployment, self.llm_deployment)):
             raise DemoError("Both existing Foundry deployment names are required.")
         if self.llm_profile not in ("standard", "gpt-6-luna"):
             raise DemoError("LLM_PROFILE must be standard or gpt-6-luna.")
+        if self.apim:
+            if not self.apim_scope.startswith("api://") or "/" not in self.apim_scope[6:]:
+                raise DemoError("APIM_SCOPE must be an api://<app-id>/<scope> Entra scope.")
+            object.__setattr__(self, "apim_llm_api", (self.apim_llm_api or self.llm_deployment).strip("/"))
+            object.__setattr__(self, "apim_decision_api", (self.apim_decision_api or self.decision_deployment).strip("/"))
         object.__setattr__(self, "endpoint", self.endpoint.rstrip("/"))
 
     @classmethod
     def from_args(cls, args):
+        apim_url = os.getenv("APIM_GATEWAY_URL", "").strip()
+        apim = {}
+        if apim_url:
+            apim = dict(apim_scope=os.getenv("APIM_SCOPE", "").strip(), apim_llm_api=os.getenv("APIM_LLM_API", "").strip(),
+                        apim_decision_api=os.getenv("APIM_DECISION_API", "").strip())
+            if not apim["apim_scope"]:
+                raise DemoError("APIM_GATEWAY_URL requires APIM_SCOPE.")
         values = [
-            args.endpoint or os.getenv("FOUNDRY_ENDPOINT"),
+            apim_url or args.endpoint or os.getenv("FOUNDRY_ENDPOINT"),
             args.decision_deployment or os.getenv("DECISION_DEPLOYMENT"),
             args.llm_deployment or os.getenv("LLM_DEPLOYMENT"),
         ]
         if any(not value or not value.strip() for value in values):
-            raise DemoError("Set FOUNDRY_ENDPOINT, DECISION_DEPLOYMENT, LLM_DEPLOYMENT or their CLI overrides.")
+            raise DemoError("Set FOUNDRY_ENDPOINT (or APIM_GATEWAY_URL), DECISION_DEPLOYMENT, LLM_DEPLOYMENT or their CLI overrides.")
         try:
             profile = getattr(args, "llm_profile", None) or os.getenv("LLM_PROFILE", "standard")
-            return cls(*(value.strip() for value in values), llm_profile=profile.strip())
+            return cls(*(value.strip() for value in values), llm_profile=profile.strip(), **apim)
         except ValueError as exc:
             raise DemoError("Invalid Azure resource endpoint.") from exc
 
@@ -221,9 +263,7 @@ class GuardedTransport(httpx.AsyncBaseTransport):
         if call is None:
             raise DemoError("Unbound model request blocked.")
         kind, actor, revision = call
-        gpt_path = ("/openai/v1/responses" if self.config.llm_profile == "gpt-6-luna"
-                    else "/openai/v1/chat/completions")
-        path = gpt_path if kind == "gpt" else "/providers/microsoft/v1/systemone"
+        path = self.config.gpt_path if kind == "gpt" else self.config.decision_path
         if request.method != "POST" or str(request.url) != self.config.endpoint + path:
             raise DemoError("Model request outside the configured Azure Foundry endpoint blocked.")
         token_estimate = await self.budget.pace_tokens(request.content) if kind == "gpt" else None
@@ -348,21 +388,28 @@ class AzureRuntime:
             transport=GuardedTransport(config, budget, inner, scenario_id),
             timeout=60, follow_redirects=False, trust_env=False,
         )
-        self.provider = get_bearer_token_provider(self.credential, LLM_SCOPE)
+        self.run_id = str(uuid4())
+        self.provider = get_bearer_token_provider(self.credential, config.token_scope)
         self.sdks = {
             actor: AsyncOpenAI(
-                base_url=config.endpoint + "/openai/v1/", api_key=self.gpt_token,
+                base_url=config.gpt_base_url, api_key=self.gpt_token,
+                default_headers=self.apim_headers(actor),
                 max_retries=0, timeout=60, http_client=self.http,
                 organization="", project="",
             ) for actor in (*AGENTS, "coordinator")
         }
+
+    def apim_headers(self, actor: str) -> dict:
+        if not self.config.apim:
+            return {}
+        return {"x-agent-name": actor, "x-scenario": self.scenario_id, "x-run-id": self.run_id}
 
     async def gpt_token(self) -> str:
         return await self.budget.bound(lambda: asyncio.to_thread(self.provider), 15)
 
     async def decision_token(self) -> str:
         token = await self.budget.bound(
-            lambda: asyncio.to_thread(self.credential.get_token, DECISION_SCOPE), 15,
+            lambda: asyncio.to_thread(self.credential.get_token, self.config.decision_scope), 15,
         )
         return token.token
 
@@ -384,8 +431,8 @@ class DecisionClient:
             token = await runtime.decision_token()
             async with budget.stage("decision", actor, revision):
                 response = await runtime.http.post(
-                    runtime.config.endpoint + "/providers/microsoft/v1/systemone",
-                    headers={"Authorization": f"Bearer {token}"},
+                    runtime.config.endpoint + runtime.config.decision_path,
+                    headers={"Authorization": f"Bearer {token}", **runtime.apim_headers(actor)},
                     json={"model": runtime.config.decision_deployment, "state": state, "questions": questions},
                 )
         except ClientAuthenticationError as exc:
