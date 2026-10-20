@@ -124,6 +124,8 @@ class Presenter:
         self.line(f"{build.customer} | order {build.order_id}")
         self.line(build.context)
         expected = {"carrier-delay-v2": "0 (resolved carrier record)",
+                    "holdout-feasible-v2": "0 (resolved carrier record)",
+                    "holdout-uncertain-v2": "open (carrier confirmation and freight authority unresolved; route decided live)",
                     "production-resequence-v2": "1 (Production cell comparison)",
                     "order-pull-forward-v2": "3 (capacity, freight and customer tradeoffs)"}[self.scenario_id]
         self.line(f"Expected specialist route: {expected}. Live decisions may differ; no forced routing.")

@@ -11,8 +11,10 @@ SELECTION_OPTIONS = ("needed", "not_needed", "cannot_determine")
 ASSESSMENT_OPTIONS = ("assessment_needed", "no_further_assessment", "cannot_determine")
 VALIDATION_OPTIONS = ("Addresses the issue", "Needs revision", "Cannot determine")
 SCENARIO_ID = "quality-hold-v2"
-ScenarioId = Literal["quality-hold-v2", "carrier-delay-v2", "production-resequence-v2", "order-pull-forward-v2"]
-SCENARIO_IDS = ("quality-hold-v2", "carrier-delay-v2", "production-resequence-v2", "order-pull-forward-v2")
+ScenarioId = Literal["quality-hold-v2", "carrier-delay-v2", "production-resequence-v2", "order-pull-forward-v2",
+                     "holdout-feasible-v2", "holdout-uncertain-v2"]
+SCENARIO_IDS = ("quality-hold-v2", "carrier-delay-v2", "production-resequence-v2", "order-pull-forward-v2",
+                "holdout-feasible-v2", "holdout-uncertain-v2")
 ISSUE_ID = "issue:quality-hold-v2"
 THRESHOLD = .70
 AgentId = Literal["supply-chain", "production", "commercial"]
