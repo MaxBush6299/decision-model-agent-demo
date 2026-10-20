@@ -409,3 +409,30 @@ exit2; no human evidence was fabricated. Attempts3 Decision-1 /7 GPT,6 tools,
 379.062s. GPT18,200 input /4,140 output tokens; actual billed dollars unavailable.
 Acceptance is not achieved. Both additional runs are consumed; no changes beyond
 observation docs or further inference followed, and no live authorization remains.
+
+## User-approved five-part scoped evidence/prompt revision
+
+After run7, explicit approval covers these changes followed by at most three
+new live pull-forward runs:
+
+1. Label build-derived `cell_occupancy_start`, `cell_occupancy_end`, `packing_end`
+   and `ready_at` using the canonical calculation. Cell occupancy ends before
+   separate-station packing; Production compares cell end with reservations,
+   not packing-inclusive factory readiness. Supply no policy data through build.
+2. Production reports false overtime/displacement when evidenced staffed work
+   fits and reservations are preserved; null is reserved for silent build records.
+3. Supply raises owned uncertainty only for missing/contradictory required records;
+   answered questions become evidence-backed conclusions.
+4. Coordinator treats conflicts as claims to verify, with derived figures
+   authoritative over contradictory specialist claims; all supplied disagreements
+   are still copied exactly. Supply the same derived build timeline to this join.
+5. Shorten all four two-option prompts with positive role instructions, omitting
+   Quality-only text while preserving exact Quality/single-plan prompts and the
+   specialist owned-unknown sentence.
+
+195 offline tests pass. New timestamps carry only build-source provenance;
+fixture facts, raw claims, output schemas, ownership map, guards, budgets/caps,
+Luna2400 Responses/default Chat setup, tools and auth remain unchanged.
+Record actual runs8 onward; no edits between runs or repairs/retries/normalization.
+Stop early on full acceptance or the first non-model auth/quota/network failure.
+Do not claim readiness without complete live acceptance; no push.

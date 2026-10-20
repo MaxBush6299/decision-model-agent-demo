@@ -155,7 +155,11 @@ class OptionContractTests(unittest.TestCase):
             self.assertEqual(option["required_cell_minutes"], 150)
             self.assertEqual(option["available_cell_minutes"], 180)
             self.assertEqual(option["packing_minutes"], 60)
+            self.assertEqual(option["cell_occupancy_start"], "2026-10-15T14:30:00-05:00")
+            self.assertEqual(option["cell_occupancy_end"], "2026-10-15T17:00:00-05:00")
+            self.assertEqual(option["packing_end"], "2026-10-15T18:00:00-05:00")
             self.assertEqual(option["ready_at"], "2026-10-15T18:00:00-05:00")
+        self.assertNotIn("authority", grounding)
         policy_only = grounded_fixture_payload("read_approval_policy", records, {"read_approval_policy"})
         self.assertNotIn("derived_evidence", policy_only)
         both = grounded_fixture_payload("read_shipment", records, {"read_shipment", "read_approval_policy"})
@@ -164,6 +168,25 @@ class OptionContractTests(unittest.TestCase):
                          {records[n].evidence_id for n in ("read_shipment", "read_approval_policy")})
         self.assertEqual(authority["options"]["full-early"]["freight_within_existing_authority"], True)
         self.assertNotIn("selected_option_id", json.dumps(grounding))
+
+    def test_build_timeline_tracks_cell_work_separately_from_packing(self):
+        from decision_v2.fixtures import grounded_fixture_payload
+        records = dict(fixture_records("order-pull-forward-v2"))
+        build = records["read_build"]
+        options = tuple(option.model_copy(update={
+            "cell": option.cell.model_copy(update={"setup_minutes": 45}),
+            "packing_minutes": 90,
+        }) for option in build.options)
+        records["read_build"] = build.model_copy(update={"options": options})
+        payload = grounded_fixture_payload("read_build", records, {"read_build"})
+        for option in payload["derived_evidence"]["options"].values():
+            self.assertEqual(option["required_cell_minutes"], 165)
+            self.assertEqual(option["cell_occupancy_start"], "2026-10-15T14:30:00-05:00")
+            self.assertEqual(option["cell_occupancy_end"], "2026-10-15T17:15:00-05:00")
+            self.assertEqual(option["packing_end"], "2026-10-15T18:45:00-05:00")
+            self.assertEqual(option["ready_at"], option["packing_end"])
+        self.assertEqual(payload["derived_evidence"]["source_evidence_ids"],
+                         ["fixture:build:order-pull-forward-v2"])
 
     def test_grounding_recomputes_authority_and_does_not_change_legacy_tools(self):
         from decision_v2.fixtures import grounded_fixture_payload, fixture_payload
@@ -2429,11 +2452,11 @@ class RoleInstructionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(prompt, agents.agent_instructions(actor, "carrier-delay-v2"))
             scoped = agents.agent_instructions(actor, "order-pull-forward-v2")
             self.assertEqual(scoped, agents.agent_instructions(actor, "production-resequence-v2"))
-            if actor == "coordinator":
-                self.assertEqual(scoped, prompt)
-            else:
+            self.assertNotIn("Quality", scoped)
+            self.assertNotIn("legacy", scoped)
+            self.assertLess(len(scoped.split()), len(prompt.split()) + 32)
+            if actor != "coordinator":
                 from decision_v2.contracts import owned_scoped_unknowns
-                self.assertTrue(scoped.startswith(prompt))
                 self.assertIn("only for your own domain", scoped)
                 self.assertIn("evidence limits in prose, not as unknowns", scoped)
                 for key in owned_scoped_unknowns(actor):
@@ -2442,6 +2465,37 @@ class RoleInstructionTests(unittest.IsolatedAsyncioTestCase):
             self.assertLess(len(prompt.split()), 220)
             self.assertIn("1200", prompt)
             self.assertNotIn("characters", prompt)
+
+    async def test_scoped_wire_prompts_separate_cell_packing_close_evidenced_unknowns_and_rank_sources(self):
+        await self.first_run("order-pull-forward-v2")
+        prompts = {}
+        for request, body in self.service.requests:
+            if not request.url.path.endswith("/chat/completions"):
+                continue
+            data = json.loads(next(m["content"] for m in body["messages"] if m["role"] == "user"))
+            prompts[data["actor"]] = " ".join(str(m["content"]) for m in body["messages"]
+                                             if m["role"] in ("system", "developer"))
+            if data["actor"] == "coordinator":
+                build = data["canonical_records"]["read_build"]
+                for option in build["derived_evidence"]["options"].values():
+                    self.assertEqual(option["cell_occupancy_end"], "2026-10-15T17:00:00-05:00")
+                    self.assertEqual(option["packing_end"], "2026-10-15T18:00:00-05:00")
+        production = prompts["production"]
+        for phrase in ("cell_occupancy_start", "cell_occupancy_end", "packing_end", "own station",
+                       "only cell_occupancy_end", "requires_overtime=false",
+                       "displaces_other_orders=false", "null only when the build record is silent"):
+            self.assertIn(phrase, production)
+        supply = prompts["supply-chain"]
+        for phrase in ("missing or contradictory", "state the answer", "allowlisted records"):
+            self.assertIn(phrase, supply)
+        coordinator = prompts["coordinator"]
+        for phrase in ("claim to verify", "derived figure is authoritative",
+                       "Copy every supplied evidence_disagreement exactly"):
+            self.assertIn(phrase, coordinator)
+        for prompt in prompts.values():
+            self.assertNotIn("Quality", prompt)
+            self.assertIn("untrusted", prompt)
+            self.assertIn("unverified", prompt)
 
     async def test_specialists_receive_domain_process_without_coordinator_join_duties(self):
         runtime, state, workflow, events = await self.first_run("order-pull-forward-v2")
@@ -2455,7 +2509,7 @@ class RoleInstructionTests(unittest.IsolatedAsyncioTestCase):
         traits = {
             "supply-chain": ("booking", "freight totals", "manufacturing capacity", "alternative carrier", "expedited"),
             "production": ("derived_evidence", "packing_minutes", "reservations", "overtime",
-                           "available_cell_minutes", "ready_at", "rather than re-deriving"),
+                           "available_cell_minutes", "ready_at", "cell_occupancy_end"),
             "commercial": ("planning permission", "unpriced", "preference", "authority checks"),
         }
         for actor, phrases in traits.items():

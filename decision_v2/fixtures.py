@@ -573,24 +573,30 @@ def fixture_payload(record):
 def production_position(build):
     cell = build.cell
     minutes = ceil(build.production_units * 60 / cell.units_per_hour) + cell.setup_minutes if cell else 0
-    ready = (datetime.fromisoformat(cell.available_from) + timedelta(minutes=minutes + build.packing_minutes)
-             if cell else datetime.fromisoformat(build.finished_ready_at) if build.finished_ready_at else None)
+    cell_start = datetime.fromisoformat(cell.available_from) if cell else None
+    cell_end = cell_start + timedelta(minutes=minutes) if cell_start else None
+    packing_end = cell_end + timedelta(minutes=build.packing_minutes) if cell_end else None
+    ready = packing_end or (datetime.fromisoformat(build.finished_ready_at) if build.finished_ready_at else None)
     available = ((min(datetime.fromisoformat(cell.available_until), datetime.fromisoformat(cell.staffed_shift_end))
                   - datetime.fromisoformat(cell.available_from)).total_seconds() / 60
                  - cell.reserved_minutes_other_orders if cell else 0)
     return {
         "production_minutes": minutes, "available_cell_minutes": available,
+        "cell_occupancy_start": cell_start.isoformat() if cell_start else None,
+        "cell_occupancy_end": cell_end.isoformat() if cell_end else None,
+        "packing_end": packing_end.isoformat() if packing_end else None,
         "ready_at": ready.isoformat() if ready else None,
     }
 
 
 def operational_position(records):
     stock, build, shipment = (records[name] for name in ("read_inventory", "read_build", "read_shipment"))
+    position = production_position(build)
     return {
         "demand_units": sum(d.quantity for d in build.deliveries),
         "available_stock_units": stock.released_units - stock.allocated_finished_units,
         "available_material_units": stock.released_material_units - stock.materials_reserved_other_orders,
-        **production_position(build),
+        **{key: position[key] for key in ("production_minutes", "available_cell_minutes", "ready_at")},
         "arrival_at": (datetime.fromisoformat(shipment.pickup_at) + timedelta(minutes=shipment.transit_minutes)).isoformat(),
     }
 
@@ -618,6 +624,9 @@ def grounded_fixture_payload(name, records, executed):
                 "available_cell_minutes": position["available_cell_minutes"],
                 "reserved_cell_minutes": option.cell.reserved_minutes_other_orders,
                 "packing_minutes": option.packing_minutes,
+                "cell_occupancy_start": position["cell_occupancy_start"],
+                "cell_occupancy_end": position["cell_occupancy_end"],
+                "packing_end": position["packing_end"],
                 "ready_at": position["ready_at"],
             }
         derived["measurement_scope"] = "Cell time excludes separate packing; ready_at is factory readiness, not customer arrival."
