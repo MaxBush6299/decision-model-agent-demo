@@ -26,6 +26,8 @@ from .diagnostics import diagnostic_error
 DECISION_SCOPE = "https://cognitiveservices.azure.com/.default"
 LLM_SCOPE = "https://ai.azure.com/.default"
 CURRENT_CALL = ContextVar("v2_call", default=None)
+REQUEST_DEADLINE = 60
+LUNA_REQUEST_DEADLINE = 120
 T = TypeVar("T")
 
 
@@ -68,6 +70,15 @@ class Config:
     @property
     def gpt_output_tokens(self) -> int:
         return 2400 if self.llm_profile == "gpt-6-luna" else 1200
+
+    @property
+    def gpt_deadline(self) -> int:
+        """Per dispatched GPT request; Decision-1 and the default Chat profile keep 60s."""
+        return LUNA_REQUEST_DEADLINE if self.llm_profile == "gpt-6-luna" else REQUEST_DEADLINE
+
+    @property
+    def transport_retry(self) -> bool:
+        return self.llm_profile == "gpt-6-luna"
 
     def __post_init__(self):
         parsed = urlsplit(self.endpoint)
@@ -127,6 +138,7 @@ class Budget:
         self.token_window = deque()
         self.tools = defaultdict(set)
         self.tool_rounds = Counter()
+        self.transport_retries = Counter()
         self.cancelled = False
 
     def remaining(self) -> float:
@@ -266,28 +278,54 @@ class GuardedTransport(httpx.AsyncBaseTransport):
         path = self.config.gpt_path if kind == "gpt" else self.config.decision_path
         if request.method != "POST" or str(request.url) != self.config.endpoint + path:
             raise DemoError("Model request outside the configured Azure Foundry endpoint blocked.")
-        token_estimate = await self.budget.pace_tokens(request.content) if kind == "gpt" else None
-        await self.budget.reserve(kind, actor, revision)
-        if token_estimate is not None:
-            self.budget.token_window.append((self.budget.clock(), token_estimate))
-        started = self.budget.clock()
-        response = None
-        try:
-            response = await self.budget.bound(lambda: self.inner.handle_async_request(request), 60)
-            await self.budget.bound(response.aread, max(.001, 60 - (self.budget.clock() - started)))
-            if len(response.content) > 1_048_576:
-                raise DemoError("Model response exceeds bounded payload size.")
-            if kind == "gpt" and response.is_success:
-                self.check_completion(response, actor, revision)
-        except (DemoError, httpx.HTTPError) as exc:
-            error = diagnostic_error(f"{kind}/{actor} request failed; no retry or repair was made.",
-                                     exc, response)
-            if response is not None:
-                await response.aclose()
-            raise error from exc
-        self.budget.trace(f"Client round trip {kind}/{actor}: "
-                          f"{(self.budget.clock() - started) * 1000:.1f}ms; HTTP {response.status_code}")
-        return response
+        deadline = self.config.gpt_deadline if kind == "gpt" else REQUEST_DEADLINE
+        attempt, cause = 0, None
+        while True:
+            attempt += 1
+            try:
+                token_estimate = await self.budget.pace_tokens(request.content) if kind == "gpt" else None
+                await self.budget.reserve(kind, actor, revision)
+            except DemoError as exc:
+                if cause is None:
+                    raise
+                raise diagnostic_error(
+                    f"{kind}/{actor} request failed after a pre-send connect timeout; the single "
+                    f"transport retry was not permitted by budgets ({exc}); no repair was made.", cause,
+                ) from cause
+            if token_estimate is not None:
+                self.budget.token_window.append((self.budget.clock(), token_estimate))
+            started = self.budget.clock()
+            response = None
+            try:
+                response = await self.budget.bound(lambda: self.inner.handle_async_request(request), deadline)
+                await self.budget.bound(response.aread, max(.001, deadline - (self.budget.clock() - started)))
+                if len(response.content) > 1_048_576:
+                    raise DemoError("Model response exceeds bounded payload size.")
+                if kind == "gpt" and response.is_success:
+                    self.check_completion(response, actor, revision)
+            except (DemoError, httpx.HTTPError) as exc:
+                if (
+                    kind == "gpt" and self.config.transport_retry and attempt == 1
+                    and response is None and isinstance(exc, httpx.ConnectTimeout)
+                ):
+                    # No request bytes were sent, so one retry cannot duplicate model work.
+                    cause = exc
+                    self.budget.transport_retries[(actor, revision)] += 1
+                    self.budget.trace(
+                        f"Transport retry gpt/{actor} revision={revision}: attempt 1 failed with a "
+                        "pre-send connect timeout; one retry subject to pacing and budgets"
+                    )
+                    continue
+                note = ("no retry or repair was made" if attempt == 1 else
+                        "attempt 2 after one pre-send connect-timeout retry; no repair was made")
+                error = diagnostic_error(f"{kind}/{actor} request failed; {note}.", exc, response)
+                if response is not None:
+                    await response.aclose()
+                raise error from exc
+            self.budget.trace(f"Client round trip {kind}/{actor}: "
+                              f"{(self.budget.clock() - started) * 1000:.1f}ms; HTTP {response.status_code}"
+                              + (f"; attempt {attempt}" if attempt > 1 else ""))
+            return response
 
     def check_completion(self, response, actor, revision):
         try:
@@ -394,7 +432,7 @@ class AzureRuntime:
             actor: AsyncOpenAI(
                 base_url=config.gpt_base_url, api_key=self.gpt_token,
                 default_headers=self.apim_headers(actor),
-                max_retries=0, timeout=60, http_client=self.http,
+                max_retries=0, timeout=config.gpt_deadline, http_client=self.http,
                 organization="", project="",
             ) for actor in (*AGENTS, "coordinator")
         }
