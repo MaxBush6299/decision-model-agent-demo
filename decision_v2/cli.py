@@ -10,6 +10,7 @@ from agent_framework import AgentFrameworkException
 from pydantic import ValidationError
 
 from .agents import ExpertTeam, underlying_demo_error
+from . import debug
 from .contracts import SCENARIO_ID, ClarificationRequest, CustomerDeliveryChange, DemoError, FinalResult, HumanResponse, RunState
 from .fixtures import EXAMPLES, fixture_records, initial_evidence, validate_delivery_change
 from .presentation import Presenter
@@ -217,6 +218,9 @@ async def run_demo(runtime: AzureRuntime, response_reader=read_terminal, trace=t
     except asyncio.CancelledError:
         presenter.attempts(budget)
         raise
+    debug.emit("run.end", status=result.status, code=result.code, warnings=len(result.warnings),
+               gpt=budget.counts["gpt"], decision=budget.counts["decision"],
+               transport_retries=sum(budget.transport_retries.values()))
     presenter.finish(result, budget)
     return result
 
@@ -228,6 +232,8 @@ async def live_run(config, verbose=False, scenario_id=SCENARIO_ID):
     terminal_trace("At most one clarification; hard maximum 20 GPT +4 Decision-1 attempts, not expected runtime.")
     budget = Budget(terminal_trace)
     runtime = AzureRuntime(config, budget, scenario_id=scenario_id)
+    debug.emit("run.start", run_id=runtime.run_id, scenario=scenario_id, llm_profile=config.llm_profile,
+               gpt_deadline_s=config.gpt_deadline, transport_retry=config.transport_retry)
     try:
         return (await run_demo(runtime, verbose=verbose)).code
     finally:
@@ -244,10 +250,13 @@ def main(argv=None) -> int:
     parser.add_argument("--llm-deployment", help="Existing GPT deployment; overrides LLM_DEPLOYMENT")
     parser.add_argument("--llm-profile", choices=("standard", "gpt-6-luna"),
                         help="GPT request profile; overrides LLM_PROFILE (default: standard)")
+    parser.add_argument("--debug", action="store_true",
+                        help="Opt-in sanitized debug trace on stderr (or DECISION_DEBUG_FILE); same as DECISION_DEBUG=1")
     args = parser.parse_args(argv)
     # Host errors are rendered explicitly below, without SDK/workflow tracebacks.
     logging.getLogger("agent_framework").setLevel(logging.CRITICAL)
     try:
+        debug.configure(args.debug)
         config = Config.from_args(args)
         return asyncio.run(live_run(config, verbose=args.verbose, scenario_id=EXAMPLES[args.example]))
     except DemoError as exc:
@@ -256,6 +265,8 @@ def main(argv=None) -> int:
     except KeyboardInterrupt:
         terminal_trace("Final advisory status: pending (interrupted); no actions executed.")
         return 2
+    finally:
+        debug.disable()
 
 
 if __name__ == "__main__":

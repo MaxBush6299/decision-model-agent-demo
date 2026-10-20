@@ -96,6 +96,9 @@ def fail(actor, field, claim, key, expected):
     sources = "; ".join(f"{value} ({source})" for value, source in expected)
     sink = PROSE_SINK.get()
     if sink is not None:
+        from . import debug
+        debug.emit("guard.prose", rule_id=f"prose.{key}", actor=actor, field=field, claim=str(claim),
+                   expected=sources, disposition="warning")
         sink.append(ProseWarning(actor, field, str(claim), f"prose.{key}", f"{key}={sources}"))
         return
     raise DemoError(f"Prose mismatch: actor={actor}; field={field}; claim={claim!r}; "

@@ -22,6 +22,7 @@ from .contracts import (
 )
 from .fixtures import ALLOWLIST, authoritative_constraints, fixture_records, fixture_payload, issue_text, routing_context
 from .diagnostics import diagnostic_error
+from . import debug
 
 DECISION_SCOPE = "https://cognitiveservices.azure.com/.default"
 LLM_SCOPE = "https://ai.azure.com/.default"
@@ -203,6 +204,7 @@ class Budget:
             if wait >= self.remaining():
                 raise DemoError("Token quota wait would exceed run deadline.")
             self.trace(f"Quota pacing: estimated GPT tokens, wait {wait:.1f}s (no service retry)")
+            debug.emit("pacing.wait", kind="gpt-tokens", seconds=round(wait, 1))
             await self.sleep(wait)
 
     async def reserve(self, kind: str, actor: str, revision: int):
@@ -231,6 +233,7 @@ class Budget:
             if wait >= self.remaining():
                 raise DemoError("Quota wait would exceed run deadline.")
             self.trace(f"Quota pacing: {kind}, wait {wait:.1f}s (no service retry)")
+            debug.emit("pacing.wait", kind=kind, seconds=round(wait, 1))
             await self.sleep(wait)
             self.remaining()
         window.append(self.clock())
@@ -240,6 +243,8 @@ class Budget:
             self.per_revision[revision] += 1
         self.trace(f"Dispatch {kind}: {actor} revision={revision}; "
                    f"attempts GPT={self.counts['gpt']}/20 Decision-1={self.counts['decision']}/4")
+        debug.emit("budget.dispatch", kind=kind, actor=actor, revision=revision,
+                   gpt=self.counts["gpt"], decision=self.counts["decision"])
 
     def check_tool_batch(self, names: list[str], actor: str, revision: int):
         self.remaining()
@@ -295,6 +300,8 @@ class GuardedTransport(httpx.AsyncBaseTransport):
             if token_estimate is not None:
                 self.budget.token_window.append((self.budget.clock(), token_estimate))
             started = self.budget.clock()
+            debug.emit("request.start", kind=kind, actor=actor, revision=revision, attempt=attempt,
+                       deadline_s=deadline, run_id=request.headers.get("x-run-id"))
             response = None
             try:
                 response = await self.budget.bound(lambda: self.inner.handle_async_request(request), deadline)
@@ -304,6 +311,9 @@ class GuardedTransport(httpx.AsyncBaseTransport):
                 if kind == "gpt" and response.is_success:
                     self.check_completion(response, actor, revision)
             except (DemoError, httpx.HTTPError) as exc:
+                debug.emit("request.error", kind=kind, actor=actor, attempt=attempt,
+                           error=type(exc).__name__, pre_send=response is None,
+                           elapsed_ms=round((self.budget.clock() - started) * 1000, 1))
                 if (
                     kind == "gpt" and self.config.transport_retry and attempt == 1
                     and response is None and isinstance(exc, httpx.ConnectTimeout)
@@ -325,6 +335,14 @@ class GuardedTransport(httpx.AsyncBaseTransport):
             self.budget.trace(f"Client round trip {kind}/{actor}: "
                               f"{(self.budget.clock() - started) * 1000:.1f}ms; HTTP {response.status_code}"
                               + (f"; attempt {attempt}" if attempt > 1 else ""))
+            if debug.enabled():
+                try:
+                    usage = debug.usage_of(response.json())
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    usage = None
+                debug.emit("request.end", kind=kind, actor=actor, attempt=attempt,
+                           http_status=response.status_code, usage=usage,
+                           elapsed_ms=round((self.budget.clock() - started) * 1000, 1))
             return response
 
     def check_completion(self, response, actor, revision):
@@ -480,9 +498,11 @@ class DecisionClient:
         if not response.is_success:
             raise DemoError(f"Decision-1 returned HTTP {response.status_code}; no retry was made.")
         try:
-            return response.json()
+            payload = response.json()
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise DemoError("Decision-1 returned invalid JSON.") from exc
+        debug.emit("decision.response", actor=actor, revision=revision, raw=payload)
+        return payload
 
     async def assess_need(self, state: RunState):
         if state.scenario_id != self.runtime.scenario_id:

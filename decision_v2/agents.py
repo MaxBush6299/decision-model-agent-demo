@@ -19,6 +19,7 @@ from .contracts import (
 from .fixtures import ALLOWLIST, authoritative_constraints, delivery_position, domain_unknowns, fixture_records, fixture_payload, grounded_fixture_payload, issue_id, issue_text, scoped_option_disagreements, sourced_option_approvals
 from .runtime import AzureRuntime, CURRENT_CALL
 from .diagnostics import diagnostic_error
+from . import debug
 from .prose import validate_scoped_prose
 
 ROLE_INSTRUCTIONS = {
@@ -151,6 +152,8 @@ class FixtureGuard(FunctionMiddleware):
         record = fixture_records(self.state.scenario_id)[context.function.name]
         self.state.evidence[record.evidence_id] = fixture_payload(record)
         self.runtime.budget.trace(f"Evidence {record.evidence_id}: {json.dumps(fixture_payload(record))}")
+        debug.emit("tool.call", actor=self.actor, tool=context.function.name, args=args,
+                   evidence_id=record.evidence_id, result_chars=len(json.dumps(fixture_payload(record))))
 
 
 def fixture_tool(name: str, selected_scenario: ScenarioId = SCENARIO_ID, executed=None):
