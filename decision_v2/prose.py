@@ -124,14 +124,36 @@ def event_kind(cue):
     return "reservation"
 
 
+DATE_PHRASE = (rf"(?:(?:{DAY.pattern})\s*)?\(?(?:{ISO_DATE})?\)?\s*(?:at\s+)?(?:{TIME})?"
+               r"(?:\s*UTC[-+]\d{2}:\d{2})?")
+DATE_LIST = (rf"{DATE_PHRASE}(?:\s*(?:/|,|and|or)\s*"
+             rf"(?=(?:{DAY.pattern}|{ISO_DATE}|\d{{1,2}}:\d{{2}})){DATE_PHRASE})*")
+FOLLOWING_CUE = re.compile(rf"{DATE_LIST}\s+(?P<cue>{EVENT.pattern})", re.I)
+
+
+def trailing_option(sentence, start, option_ids):
+    """An option named right after the date ('<date> for split-standard') owns that date."""
+    for option in option_ids:
+        label = re.escape(option).replace(r"\-", r"[- ]?")
+        if re.match(rf"{DATE_LIST}\s*,?\s*(?:for|in|under)\s+(?:the\s+)?{label}\b", sentence[start:], re.I):
+            return option
+    return None
+
+
 def expected_event(sentence, start, events, explicit):
-    cues = list(EVENT.finditer(sentence))
-    preceding = [cue for cue in cues if cue.end() <= start]
-    cue = preceding[-1] if preceding else None
-    if cue is None or start - cue.end() > 100:
-        return None, []
-    kind = event_kind(cue.group())
-    options = option_scope(sentence, start, events, explicit)
+    following = FOLLOWING_CUE.match(sentence, start)
+    cue = None
+    if following:
+        # A cue directly after the date ('Friday 09:00-10:00 window') binds the date to that event.
+        kind = event_kind(following.group("cue"))
+    else:
+        preceding = [match for match in EVENT.finditer(sentence) if match.end() <= start]
+        cue = preceding[-1] if preceding else None
+        if cue is None or start - cue.end() > 100:
+            return None, []
+        kind = event_kind(cue.group())
+    owner = None if explicit else trailing_option(sentence, start, events)
+    options = [owner] if owner else option_scope(sentence, start, events, explicit)
     expected = [item for option in options for item in events.get(option, {}).get(kind, [])
                 if item[0] is not None]
     return kind, sorted(set(expected))
