@@ -499,3 +499,29 @@ All209 offline tests pass. Schemas, ownership,60s request timeout, pacing,
 call/tool/time caps, auth and Luna2400 Responses/default Chat1200 remain
 unchanged. No retries, repair, normalization, dependency/site/v1/cloud changes
 or push; prompt effectiveness and live acceptance await separate authorization.
+
+## User-approved ISO/label separation and bounded live follow-up
+
+Runs15-19 exposed a format regression: Production copied the human calendar
+label into both typed `ready_at` fields. Keep the schema and parser strict.
+Every build/shipment `calendar_labels` entry becomes
+`{iso: <exact source/calculated ISO string>, label: <weekday/date/time/offset>}`,
+including derived times and Coordinator canonical records. All four scoped
+prompts require exact `iso` for typed datetimes and verbatim `label` only in
+prose; never put a label in a typed field. No label parsing, normalization,
+repair or output rewrite. Existing ISO values, prose guard, Commercial flag
+rule, ownership, caps/budgets/pacing,60s timeout, auth, Luna Responses2400/
+default Chat1200 and Quality/single-plan prompts remain unchanged.
+
+211 offline tests pass, covering derived pair shape, actual tool/wire delivery,
+prompt separation, strict rejection of label-valued typed fields and correct
+ISO acceptance. Unchanged saved15-19 outputs still fail; saved11 findings/join
+still pass. These are offline replays, not re-executed model calls.
+
+After committing and passing the offline suite, approval permits up to five
+sequential order-pull-forward live runs20-24 on that fixed commit. No changes,
+retries, repair or normalization between runs. Stop on non-model infrastructure
+failure, or two consecutive identical typed-field/format errors; otherwise run
+all five. Record full per-run evidence, separate host and semantic-review rates,
+failure groups and comparison with10-14 and15-19; commit observations locally,
+no push. Do not infer reliability/readiness beyond the observed rates.

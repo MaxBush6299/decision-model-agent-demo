@@ -274,7 +274,8 @@ class OptionContractTests(unittest.TestCase):
         records["read_build"] = build.model_copy(update={"options": tuple(options)})
         derived = grounded_fixture_payload("read_build", records, {"read_build"})["derived_evidence"]
         self.assertEqual(derived["calendar_labels"]["derived.options.full-early.ready_at"],
-                         "Friday 2026-10-16 18:00 UTC-05:00")
+                         {"iso": "2026-10-16T18:00:00-05:00",
+                          "label": "Friday 2026-10-16 18:00 UTC-05:00"})
         for name in ("read_build", "read_shipment"):
             payload = grounded_fixture_payload(name, records, {name})
             for path, label in calendar_labels(payload, "record").items():
@@ -287,20 +288,55 @@ class OptionContractTests(unittest.TestCase):
         build = grounded_fixture_payload("read_build", records, {"read_build"})["derived_evidence"]
         labels = build["calendar_labels"]
         self.assertEqual(labels["derived.options.full-early.cell_occupancy_end"],
-                         "Thursday 2026-10-15 17:00 UTC-05:00")
+                         {"iso": "2026-10-15T17:00:00-05:00",
+                          "label": "Thursday 2026-10-15 17:00 UTC-05:00"})
         self.assertEqual(labels["derived.options.full-early.ready_at"],
-                         "Thursday 2026-10-15 18:00 UTC-05:00")
+                         {"iso": "2026-10-15T18:00:00-05:00",
+                          "label": "Thursday 2026-10-15 18:00 UTC-05:00"})
         self.assertEqual(labels["record.other_orders.0.delivery_at"],
-                         "Friday 2026-10-16 14:00 UTC-05:00")
+                         {"iso": "2026-10-16T14:00:00-05:00",
+                          "label": "Friday 2026-10-16 14:00 UTC-05:00"})
         self.assertEqual(build["source_evidence_ids"], ["fixture:build:order-pull-forward-v2"])
         self.assertNotIn("authority", build)
         shipment = grounded_fixture_payload("read_shipment", records, {"read_shipment"})["derived_evidence"]
         labels = shipment["calendar_labels"]
         self.assertEqual(labels["record.options.0.legs.0.booking_cutoff"],
-                         "Thursday 2026-10-15 16:30 UTC-05:00")
+                         {"iso": "2026-10-15T16:30:00-05:00",
+                          "label": "Thursday 2026-10-15 16:30 UTC-05:00"})
         self.assertEqual(labels["derived.options.full-early.arrivals.0"],
-                         "Friday 2026-10-16 09:30 UTC-05:00")
+                         {"iso": "2026-10-16T09:30:00-05:00",
+                          "label": "Friday 2026-10-16 09:30 UTC-05:00"})
         self.assertNotIn("authority", shipment)
+
+    def test_calendar_label_is_still_rejected_in_each_typed_ready_at_field(self):
+        from decision_v2.contracts import ProductionFinding
+        for index in (0, 1):
+            data = scoped_payload("production")
+            data["option_assessments"][index]["ready_at"] = "Thursday 2026-10-15 18:00 UTC-05:00"
+            before = json.dumps(data)
+            with self.subTest(index=index), self.assertRaises(ValidationError) as caught:
+                ProductionFinding.model_validate_json(json.dumps(data))
+            self.assertEqual(caught.exception.errors()[0]["loc"], ("option_assessments", index, "ready_at"))
+            self.assertEqual(caught.exception.errors()[0]["type"], "datetime_parsing")
+            self.assertEqual(json.dumps(data), before)
+
+    def test_calendar_pair_iso_is_accepted_without_changing_the_prose_label(self):
+        from decision_v2.fixtures import grounded_fixture_payload
+        from decision_v2.contracts import ProductionFinding
+        records = fixture_records("order-pull-forward-v2")
+        labels = grounded_fixture_payload("read_build", records, {"read_build"})[
+            "derived_evidence"]["calendar_labels"]
+        data = scoped_payload("production")
+        for option in data["option_assessments"]:
+            pair = labels[f"derived.options.{option['option_id']}.ready_at"]
+            self.assertIsInstance(pair, dict)
+            self.assertEqual(set(pair), {"iso", "label"})
+            option["ready_at"] = pair["iso"]
+            option["assessment"] = f"Factory ready {pair['label']}."
+        parsed = ProductionFinding.model_validate_json(json.dumps(data))
+        for option in parsed.option_assessments:
+            self.assertEqual(option.ready_at, datetime.fromisoformat("2026-10-15T18:00:00-05:00"))
+            self.assertEqual(option.assessment, "Factory ready Thursday 2026-10-15 18:00 UTC-05:00.")
 
     def test_grounding_uses_only_read_sources_and_preserves_records(self):
         from decision_v2.fixtures import grounded_fixture_payload, fixture_payload
@@ -2419,8 +2455,14 @@ class ScopedFrameworkTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(shipping["source_evidence_ids"],
                          [fixture_records("order-pull-forward-v2")["read_shipment"].evidence_id])
         self.assertNotIn("authority", shipping)
+        self.assertEqual(shipping["calendar_labels"]["derived.options.full-early.arrivals.0"],
+                         {"iso": "2026-10-16T09:30:00-05:00",
+                          "label": "Friday 2026-10-16 09:30 UTC-05:00"})
         production = observed["production"][0]
         self.assertEqual(production["options"]["full-early"]["run_minutes"], 120)
+        self.assertEqual(production["calendar_labels"]["derived.options.full-early.ready_at"],
+                         {"iso": "2026-10-15T18:00:00-05:00",
+                          "label": "Thursday 2026-10-15 18:00 UTC-05:00"})
         commercial = next(d["authority"] for d in observed["commercial"] if "authority" in d)
         self.assertTrue(commercial["options"]["full-early"]["freight_within_existing_authority"])
         self.assertTrue(commercial["options"]["split-standard"]["matches_documented_customer_planning_permission"])
@@ -2671,7 +2713,8 @@ class RoleInstructionTests(unittest.IsolatedAsyncioTestCase):
                 build = data["canonical_records"]["read_build"]
                 self.assertEqual(data["canonical_records"]["read_shipment"]["derived_evidence"][
                     "calendar_labels"]["derived.options.full-early.arrivals.0"],
-                    "Friday 2026-10-16 09:30 UTC-05:00")
+                    {"iso": "2026-10-16T09:30:00-05:00",
+                     "label": "Friday 2026-10-16 09:30 UTC-05:00"})
                 for option in build["derived_evidence"]["options"].values():
                     self.assertEqual(option["cell_occupancy_end"], "2026-10-15T17:00:00-05:00")
                     self.assertEqual(option["packing_end"], "2026-10-15T18:00:00-05:00")
@@ -2692,7 +2735,9 @@ class RoleInstructionTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("untrusted", prompt)
             self.assertIn("unverified", prompt)
         for prompt in prompts.values():
-            self.assertIn("quote calendar_labels verbatim", prompt)
+            for phrase in ("calendar_labels pairs", "typed datetime fields use the exact iso value",
+                           "prose quotes the label verbatim", "never put a label in a typed field"):
+                self.assertIn(phrase, prompt)
         commercial = prompts["commercial"]
         for phrase in ("changes_customer_commitment=false", "confirmed window",
                        "null only when the record is silent",

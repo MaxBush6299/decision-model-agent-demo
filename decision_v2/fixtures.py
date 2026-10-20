@@ -612,7 +612,7 @@ def calendar_label(value: str) -> str:
     return f"{WEEKDAYS[instant.weekday()]} {instant:%Y-%m-%d %H:%M}{zone}"
 
 
-def calendar_labels(value, path="") -> dict[str, str]:
+def calendar_labels(value, path="") -> dict[str, dict[str, str]]:
     if isinstance(value, dict):
         return {key: label for name, item in value.items()
                 for key, label in calendar_labels(item, f"{path}.{name}" if path else name).items()}
@@ -620,7 +620,7 @@ def calendar_labels(value, path="") -> dict[str, str]:
         return {key: label for index, item in enumerate(value)
                 for key, label in calendar_labels(item, f"{path}.{index}").items()}
     if isinstance(value, str) and re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}", value):
-        return {path: calendar_label(value)}
+        return {path: {"iso": value, "label": calendar_label(value)}}
     return {}
 
 

@@ -68,7 +68,7 @@ TWO_OPTION_INSTRUCTIONS = {
     "supply-chain": (
         "Assess released inventory, protected material allocations and each shipment option with your two allowlisted tools. "
         "Compare quantities, booking cutoffs, confirmed qualified carriers, pickup, transit and customer windows using executed evidence. "
-        "Report derived_evidence figures directly, with expedited service, alternative carrier and freight totals scoped to each option; quote calendar_labels verbatim for dates instead of composing weekdays. "
+        "Report derived_evidence figures directly, with expedited service, alternative carrier and freight totals scoped to each option; use calendar_labels pairs: typed datetime fields use the exact iso value; prose quotes the label verbatim; never put a label in a typed field. "
         "Keep an owned unknown open only when a required record is missing or contradictory; when allowlisted records answer it, state the answer. "
         "Leave manufacturing capacity to Production and spending/customer authority to sourced policy checks. "
         "Cover every option_assessments ID once, keep preferred_option_id optional, and preserve required_unknown_keys and previous_conflicts. "
@@ -77,7 +77,7 @@ TWO_OPTION_INSTRUCTIONS = {
     ),
     "production": (
         "Assess qualified-cell readiness, staffed capacity and protected reservations using build/inventory tools. "
-        "Report derived_evidence required_cell_minutes, available_cell_minutes, packing_minutes and ready_at directly; quote calendar_labels verbatim for dates instead of composing weekdays. "
+        "Report derived_evidence required_cell_minutes, available_cell_minutes, packing_minutes and ready_at directly; use calendar_labels pairs: typed datetime fields use the exact iso value; prose quotes the label verbatim; never put a label in a typed field. "
         "The cell is occupied from cell_occupancy_start to cell_occupancy_end; packing follows on its own station through packing_end and only moves ready_at; compare only cell_occupancy_end with the next reservation. "
         "Set requires_overtime=false and displaces_other_orders=false when derived figures show work fits staffed time and preserves reservations; use null only when the build record is silent. "
         "Cover each option_assessments ID once, keep preference optional, and preserve required_unknown_keys and previous_conflicts. "
@@ -87,7 +87,7 @@ TWO_OPTION_INSTRUCTIONS = {
     ),
     "commercial": (
         "Assess the documented customer request, planning permission and receipt preference using shipment/policy tools. "
-        "Report supplied derived_evidence freight totals and authority checks directly; quote calendar_labels verbatim for dates instead of composing weekdays. "
+        "Report supplied derived_evidence freight totals and authority checks directly; use calendar_labels pairs: typed datetime fields use the exact iso value; prose quotes the label verbatim; never put a label in a typed field. "
         "Compare customer benefit with evidenced cost, keeping an unpriced preference unpriced and manufacturing feasibility with Production. "
         "Use matches_documented_customer_planning_permission and sourced window checks: set changes_customer_commitment=false within documented windows or fulfilling a documented planning request, true only for a sourced departure from a confirmed window, and null only when the record is silent; planning permission remains distinct from executed acceptance. "
         "Cover every option_assessments ID once, keep preferred_option_id optional, and preserve required_unknown_keys and previous_conflicts. "
@@ -95,7 +95,7 @@ TWO_OPTION_INSTRUCTIONS = {
         "Return concise strict advisory JSON within1200 output tokens, reserving customer contact, approvals and execution for responsible owners."
     ),
     "coordinator": (
-        "Join matching option_id assessments with canonical records and authoritative_constraints, with no tools; select an option and explain customer/cost/readiness tradeoffs using evidenced weights; quote calendar_labels verbatim for dates instead of composing weekdays. "
+        "Join matching option_id assessments with canonical records and authoritative_constraints, with no tools; select an option and explain customer/cost/readiness tradeoffs using evidenced weights; use calendar_labels pairs: typed datetime fields use the exact iso value; prose quotes the label verbatim; never put a label in a typed field. "
         "Preserve true owned flags, all unknowns, exact conflicts, safety_approval_requests and finding_refs identity/revision. "
         "Describe a conflict as a claim to verify; when a specialist claim contradicts a derived figure, state that the derived figure is authoritative and preserve raw model claims. "
         "Copy every supplied evidence_disagreement exactly into conflicts, including unselected discrepancies. "
