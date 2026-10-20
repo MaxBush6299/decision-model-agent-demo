@@ -30,7 +30,6 @@ QUANTITIES = (
     ("freight_total_usd", rf"\$\s*({NUMBER})\s+(?:incremental\s+)?freight\b"),
     ("freight_total_usd", rf"\bfreight(?:\s+(?:total|cost))?\s*(?:(?:is|of|totals|costs)\s+|[:=]\s*)\$\s*({NUMBER})"),
     ("available_material_units", rf"\b({NUMBER})\s+(?:(?:released|unreserved)\s+)?available\s+(?:released\s+)?material(?:s|\s+units)\b"),
-    ("available_material_units", rf"\b({NUMBER})\s+(?:unreserved\s+released|released\s+unreserved|unreserved)\s+material(?:s|\s+units)\b"),
     ("available_material_units", rf"\bavailable[_ ]material[_ ]units\s*[:=]?\s*({NUMBER})\b"),
     ("new_units", rf"\b(?:requires?|needs?)\s+({NUMBER})\s+(?:new\s+units|material\s+units)\b"),
     ("new_units", rf"\b({NUMBER})\s+new\s+units\s+(?:are\s+)?required\b"),
@@ -38,6 +37,10 @@ QUANTITIES = (
 QUANTITIES = tuple((key, re.compile(pattern, re.I)) for key, pattern in QUANTITIES)
 CELL_PAIR = re.compile(
     rf"\b({NUMBER})\s*(?:of|/)\s*({NUMBER})\s+(?:available\s+)?(?:staffed\s+)?cell[- ]minutes\b", re.I)
+MATERIAL_RESIDUAL = re.compile(
+    r"\bremain\w*|\bremainder\b|\bleft\b|"
+    r"\bafter\b[^;.!?]*\b(?:requirements?|consum\w*|us(?:e|ing)|build|production|allocation)\b|"
+    r"\b(?:post[- ]build|post[- ]consumption)\b", re.I)
 
 
 def option_scope(text, position, option_ids, explicit):
@@ -172,6 +175,9 @@ def check_quantities(text, actor, field, figures, explicit):
             claims.extend((key, match.group(index), match.start(), match.group())
                           for key, index in (("required_cell_minutes", 1), ("available_cell_minutes", 2)))
         for key, amount, position, claim in claims:
+            # A residual is not the sourced pre-build balance; ambiguous phase claims are unverified.
+            if key == "available_material_units" and MATERIAL_RESIDUAL.search(sentence):
+                continue
             available = figures.get(key, {})
             options = option_scope(sentence, position, available, explicit)
             expected = [available[option] for option in options if option in available]

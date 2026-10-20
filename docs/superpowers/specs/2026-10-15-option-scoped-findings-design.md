@@ -525,3 +525,29 @@ failure, or two consecutive identical typed-field/format errors; otherwise run
 all five. Record full per-run evidence, separate host and semantic-review rates,
 failure groups and comparison with10-14 and15-19; commit observations locally,
 no push. Do not infer reliability/readiness beyond the observed rates.
+
+## User-approved phase-aware prose checks and temporal wording
+
+Material availability recognition requires explicit availability language:
+released/unreserved stock alone does not identify a pre-build balance.
+Residual language (remaining, remainder, left, after requirement/consumption/
+use/build/allocation, post-build or post-consumption) makes the phase ambiguous
+for this narrow check, so it does not compare that sentence to pre-build
+availability. This intentionally under-triggers rather than guessing a phase;
+it does not validate residual arithmetic. Explicit unambiguous availability
+claims still fail closed against sourced figures.
+
+Production distinguishes reservation gap (next reservation start minus cell
+end, zero when equal) from total staffed headroom (available minus required
+cell minutes, not necessarily before a reservation). Delivery timing names
+deadline/window versus derived arrival provenance, or stays with Supply-chain
+when outside Production's tools. Quality/single-plan prompts are unchanged.
+General synthetic tests replace no historical result and use no saved-run
+replays for tuning. Existing schemas, guards, caps, profiles and auth remain.
+
+After offline validation and source commit, up to five sequential live runs
+25-29 are authorized without intervening changes, retries or normalization.
+Stop on infrastructure failure or two consecutive identical new format errors;
+otherwise use the batch. Record host versus independently reviewed rates,
+prior-batch comparisons and local observation commit, with no push/readiness
+claim.

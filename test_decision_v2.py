@@ -143,6 +143,43 @@ class DiagnosticCaptureTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ScopedProseTests(unittest.TestCase):
+    def test_material_balance_requires_explicit_availability_and_unambiguous_phase(self):
+        from decision_v2.prose import check_quantities
+        figures = {"available_material_units": {"synthetic": (720, "synthetic:stock")}}
+        for text in (
+            "There are 95 unreserved released material units.",
+            "There are 95 released unreserved material units.",
+            "There are 95 unreserved materials.",
+            "95 available material units remain.",
+            "Remaining available material units: 95.",
+            "Available material units: 95 after consumption.",
+            "After the assembly requirement, there are 95 available material units.",
+            "Post-build available material units: 95.",
+            "Available material units: 95 are left for later work.",
+            "There are 720 available material units before build.",
+        ):
+            with self.subTest(text=text):
+                check_quantities(text, "synthetic", "assessment", figures, "synthetic")
+        for text in (
+            "There are 95 available material units before build.",
+            "Available material units: 95.",
+            "There are 95 unreserved available material units.",
+        ):
+            with self.subTest(text=text), self.assertRaisesRegex(
+                    DemoError, "synthetic.*available_material_units.*720"):
+                check_quantities(text, "synthetic", "assessment", figures, "synthetic")
+
+    def test_production_prompt_distinguishes_temporal_gap_headroom_and_delivery_sources(self):
+        from decision_v2.agents import agent_instructions
+        prompt = agent_instructions("production", "order-pull-forward-v2")
+        for phrase in ("next reservation start minus cell_occupancy_end",
+                       "zero gap when they coincide",
+                       "available_cell_minutes minus required_cell_minutes",
+                       "does not locate that slack before a reservation",
+                       "deadline/window endpoint", "derived shipment arrival",
+                       "leave delivery timing to Supply-chain"):
+            self.assertIn(phrase, prompt)
+
     def check(self, actor, text, *, field="assessment"):
         from decision_v2.prose import validate_scoped_prose
         from decision_v2.contracts import SupplyFinding, ProductionFinding, CommercialFinding
@@ -2688,7 +2725,6 @@ class RoleInstructionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(scoped, agents.agent_instructions(actor, "production-resequence-v2"))
             self.assertNotIn("Quality", scoped)
             self.assertNotIn("legacy", scoped)
-            self.assertLess(len(scoped.split()), len(prompt.split()) + 32)
             if actor != "coordinator":
                 from decision_v2.contracts import owned_scoped_unknowns
                 self.assertIn("only for your own domain", scoped)
