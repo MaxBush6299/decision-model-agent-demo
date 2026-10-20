@@ -436,3 +436,28 @@ Luna2400 Responses/default Chat setup, tools and auth remain unchanged.
 Record actual runs8 onward; no edits between runs or repairs/retries/normalization.
 Stop early on full acceptance or the first non-model auth/quota/network failure.
 Do not claim readiness without complete live acceptance; no push.
+
+### Observed runs8-9 on a15bdfa
+
+Both unchanged runs completed Supply/Production with correct own-domain closure,
+14:30-17:00 cell occupancy /18:00 separate-packing readiness,150/180 capacity
+and false overtime/displacement. Run8 Commercial instead claimed true commitment
+changes for both planning-permitted options and raised customer_disposition.
+Coordinator copied the two sourced contradictions but replaced the selected
+true claim with false; the unchanged preservation guard failed explicitly:
+`Coordinator omitted a material changes_customer_commitment requirement.`
+No final D1 ran;2 D1 /7 GPT,6 tools,382.563s, GPT18,194 input /3,784 output.
+All service requests HTTP200/completed, so the next unchanged authorized run
+was permitted; no repair or host-normalization occurred.
+
+Run9 all three specialists returned empty unknowns/conflicts and source-consistent
+typed option claims. Coordinator selected split-standard, explained the cost/
+receipt tradeoff, kept approvals/unknowns/conflicts empty and preserved all
+finding refs. Final D1 Addresses the issue92.5848%; host advisory_complete/exit0
+with no review reasons.3 D1 /7 GPT,6 tools,375.313s, GPT18,091 input /3,220
+output. All service requests HTTP200/completed; actual billed dollars unavailable.
+Unchanged offline replay reproduced run8's exact guard failure and passed
+run9's full proposal/source checks with the original supplied evidence ledger.
+This is one full scoped advisory acceptance, not guaranteed repeatability or
+execution authority. Stop early:2/3 new runs used, run10 not executed.
+No code/prompt/schema changes between runs, retries, repairs or normalization.
