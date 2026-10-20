@@ -77,12 +77,16 @@ class Shipment(FixtureRecord):
     notification_status: Literal["pending responsible Quality contact"] = "pending responsible Quality contact"
     replacement_lot_id: str = "L-1058"
     replacement_offer_id: str = "SUP-OFFER-300"
+    replacement_offer_status: str = (
+        "Unconfirmed supplier offer reference; not a selectable plan, accepted stock or approved supply."
+    )
     replacement_units: int = 300
     collection_possible: Literal[True] = True
     confirmed_arrival: str | None = None
     incoming_accepted: Literal[False] = False
     quote_id: str = "DQ-3600"
     freight_cost_usd: int = Field(default=3600, ge=0)
+    quote_status: str = "Quoted cost only; this record does not approve the freight or confirm a courier slot."
 
 
 class Delivery(StrictModel):
@@ -364,6 +368,7 @@ class OperationalBuild(FixtureRecord):
     cell: QualifiedCell | None = None
     packing_minutes: int = Field(default=0, ge=0)
     packing_station_confirmed: bool = True
+    quantity_basis: str | None = None
     other_orders: tuple[CommittedOrder, ...] = ()
     options: tuple[BuildOption, ...] = Field(default=(), max_length=2)
 
@@ -469,6 +474,8 @@ def operational_records(scenario_id: ScenarioId):
                 available_from="2026-10-15T14:30:00-05:00", available_until="2026-10-15T18:30:00-05:00",
                 staffed_shift_end="2026-10-15T20:00:00-05:00", setup_minutes=30, units_per_hour=160),
             packing_minutes=60,
+            quantity_basis="500 ordered = 100 released finished + 400 new build; the 440 released material "
+                           "units are feedstock for the 400 new units, not additional finished coverage.",
         )
         shipment = CarrierPlan(**metadata("shipment"), shipment_id="SH-902",
                                carrier="Fictional standard contracted carrier", **common)
@@ -495,6 +502,9 @@ def operational_records(scenario_id: ScenarioId):
                 staffed_shift_end="2026-10-15T20:00:00-05:00", setup_minutes=30, units_per_hour=120,
                 reserved_minutes_other_orders=120),
             packing_minutes=60,
+            quantity_basis="400 ordered = 160 released finished + 240 new build. Materials: 600 released "
+                           "- 200 reserved for SO-6702 = 400 available before consumption; building 240 "
+                           "leaves 160 remaining after the requirement.",
             other_orders=(CommittedOrder(order_id="SO-6702", quantity=200,
                 production_from="2026-10-15T17:00:00-05:00", production_until="2026-10-15T19:00:00-05:00",
                 delivery_at="2026-10-16T14:00:00-05:00", material_reserved_units=200),),
