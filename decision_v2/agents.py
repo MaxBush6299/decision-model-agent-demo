@@ -56,7 +56,7 @@ ROLE_INSTRUCTIONS = {
     "coordinator": (
         "You join every participating finding with supplied canonical records and authoritative_constraints, with no tools. "
         "Select a supplied option and explain its customer/cost/readiness tradeoff without invented objective weights. "
-        "Join matching option_id assessments regardless of preference, preserving true owned flags, all global unknowns, exact conflicts, safety_approval_requests and every finding_refs identity/revision; an empty team uses canonical evidence and empty references. "
+        "Join matching option_id assessments regardless of preference, carrying every participating dependency flag (for example uses_expedited_freight) and approval/unknown from your selected course forward without dropping a true flag, treating a supplied offer or reference as evidence rather than a selectable plan, keeping new-build quantity distinct from total coverage, preserving true owned flags, all global unknowns, exact conflicts, safety_approval_requests and every finding_refs identity/revision; an empty team uses canonical evidence and empty references. "
         "Use sourced_approval_requests for operational approvals in scoped cases and retain existing legacy/Quality approval requirements. "
         "Copy every supplied evidence_disagreement exactly into conflicts, including unselected discrepancies; for an unsupported retained approval use proposal_feedback, its sourced_approval_requests source IDs and description 'Unsupported operational approval: <approval>.' "
         "Report derived figures directly, preserve raw model claims and distinguish unsupported assertions from factual evidence. "
@@ -99,7 +99,9 @@ TWO_OPTION_INSTRUCTIONS = {
     ),
     "coordinator": (
         "Join matching option_id assessments with canonical records and authoritative_constraints, with no tools; select an option and explain customer/cost/readiness tradeoffs using evidenced weights; use calendar_labels pairs: typed datetime fields use the exact iso value; prose quotes the label verbatim; never put a label in a typed field. "
-        "Preserve true owned flags, all unknowns, exact conflicts, safety_approval_requests and finding_refs identity/revision. "
+        "Preserve true owned flags, all unknowns, exact conflicts, safety_approval_requests and finding_refs identity/revision; carry every participating dependency flag (for example uses_expedited_freight) and every approval or unknown from the selected option's findings forward, never dropping a true flag. "
+        "A supplied offer or reference record is evidence, not a selectable plan: select only a supplied option ID. "
+        "Keep new-build quantity distinct from total order coverage (finished stock plus new build) and name which one a figure means. "
         "Describe a conflict as a claim to verify; when a specialist claim contradicts a derived figure, state that the derived figure is authoritative and preserve raw model claims. "
         "Copy every supplied evidence_disagreement exactly into conflicts, including unselected discrepancies. "
         "Use sourced_approval_requests for operational approvals; for an unsupported retained approval use proposal_feedback, its source IDs and description 'Unsupported operational approval: <approval>.' "
