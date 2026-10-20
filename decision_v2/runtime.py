@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from time import monotonic
+from uuid import uuid4
 from typing import Awaitable, Callable, TypeVar
 from urllib.parse import urlsplit
 from urllib.request import getproxies
@@ -21,10 +22,13 @@ from .contracts import (
 )
 from .fixtures import ALLOWLIST, authoritative_constraints, fixture_records, fixture_payload, issue_text, routing_context
 from .diagnostics import diagnostic_error
+from . import debug
 
 DECISION_SCOPE = "https://cognitiveservices.azure.com/.default"
 LLM_SCOPE = "https://ai.azure.com/.default"
 CURRENT_CALL = ContextVar("v2_call", default=None)
+REQUEST_DEADLINE = 60
+LUNA_REQUEST_DEADLINE = 120
 T = TypeVar("T")
 
 
@@ -34,10 +38,48 @@ class Config:
     decision_deployment: str
     llm_deployment: str
     llm_profile: str = "standard"
+    # Opt-in Azure API Management gateway profile; empty keeps the direct Foundry path.
+    apim_scope: str = ""
+    apim_llm_api: str = ""
+    apim_decision_api: str = ""
+
+    @property
+    def apim(self) -> bool:
+        return bool(self.apim_scope)
+
+    @property
+    def gpt_path(self) -> str:
+        suffix = "/v1/responses" if self.llm_profile == "gpt-6-luna" else "/v1/chat/completions"
+        return f"/{self.apim_llm_api}{suffix}" if self.apim else "/openai" + suffix
+
+    @property
+    def gpt_base_url(self) -> str:
+        return self.endpoint + (f"/{self.apim_llm_api}/v1/" if self.apim else "/openai/v1/")
+
+    @property
+    def decision_path(self) -> str:
+        return (f"/{self.apim_decision_api}" if self.apim else "") + "/providers/microsoft/v1/systemone"
+
+    @property
+    def token_scope(self) -> str:
+        return self.apim_scope or LLM_SCOPE
+
+    @property
+    def decision_scope(self) -> str:
+        return self.apim_scope or DECISION_SCOPE
 
     @property
     def gpt_output_tokens(self) -> int:
         return 2400 if self.llm_profile == "gpt-6-luna" else 1200
+
+    @property
+    def gpt_deadline(self) -> int:
+        """Per dispatched GPT request; Decision-1 and the default Chat profile keep 60s."""
+        return LUNA_REQUEST_DEADLINE if self.llm_profile == "gpt-6-luna" else REQUEST_DEADLINE
+
+    @property
+    def transport_retry(self) -> bool:
+        return self.llm_profile == "gpt-6-luna"
 
     def __post_init__(self):
         parsed = urlsplit(self.endpoint)
@@ -46,27 +88,39 @@ class Config:
             parsed.scheme != "https" or parsed.username or parsed.password
             or parsed.netloc != host or parsed.path not in ("", "/")
             or parsed.query or parsed.fragment
-            or not host.endswith((".services.ai.azure.com", ".openai.azure.com"))
+            or (not host.endswith((".services.ai.azure.com", ".openai.azure.com")) and not self.apim)
         ):
             raise DemoError("Endpoint must be an HTTPS Azure resource root without credentials, port, or API path.")
         if any(not value.strip() for value in (self.decision_deployment, self.llm_deployment)):
             raise DemoError("Both existing Foundry deployment names are required.")
         if self.llm_profile not in ("standard", "gpt-6-luna"):
             raise DemoError("LLM_PROFILE must be standard or gpt-6-luna.")
+        if self.apim:
+            if not self.apim_scope.startswith("api://") or "/" not in self.apim_scope[6:]:
+                raise DemoError("APIM_SCOPE must be an api://<app-id>/<scope> Entra scope.")
+            object.__setattr__(self, "apim_llm_api", (self.apim_llm_api or self.llm_deployment).strip("/"))
+            object.__setattr__(self, "apim_decision_api", (self.apim_decision_api or self.decision_deployment).strip("/"))
         object.__setattr__(self, "endpoint", self.endpoint.rstrip("/"))
 
     @classmethod
     def from_args(cls, args):
+        apim_url = os.getenv("APIM_GATEWAY_URL", "").strip()
+        apim = {}
+        if apim_url:
+            apim = dict(apim_scope=os.getenv("APIM_SCOPE", "").strip(), apim_llm_api=os.getenv("APIM_LLM_API", "").strip(),
+                        apim_decision_api=os.getenv("APIM_DECISION_API", "").strip())
+            if not apim["apim_scope"]:
+                raise DemoError("APIM_GATEWAY_URL requires APIM_SCOPE.")
         values = [
-            args.endpoint or os.getenv("FOUNDRY_ENDPOINT"),
+            apim_url or args.endpoint or os.getenv("FOUNDRY_ENDPOINT"),
             args.decision_deployment or os.getenv("DECISION_DEPLOYMENT"),
             args.llm_deployment or os.getenv("LLM_DEPLOYMENT"),
         ]
         if any(not value or not value.strip() for value in values):
-            raise DemoError("Set FOUNDRY_ENDPOINT, DECISION_DEPLOYMENT, LLM_DEPLOYMENT or their CLI overrides.")
+            raise DemoError("Set FOUNDRY_ENDPOINT (or APIM_GATEWAY_URL), DECISION_DEPLOYMENT, LLM_DEPLOYMENT or their CLI overrides.")
         try:
             profile = getattr(args, "llm_profile", None) or os.getenv("LLM_PROFILE", "standard")
-            return cls(*(value.strip() for value in values), llm_profile=profile.strip())
+            return cls(*(value.strip() for value in values), llm_profile=profile.strip(), **apim)
         except ValueError as exc:
             raise DemoError("Invalid Azure resource endpoint.") from exc
 
@@ -85,6 +139,7 @@ class Budget:
         self.token_window = deque()
         self.tools = defaultdict(set)
         self.tool_rounds = Counter()
+        self.transport_retries = Counter()
         self.cancelled = False
 
     def remaining(self) -> float:
@@ -149,6 +204,7 @@ class Budget:
             if wait >= self.remaining():
                 raise DemoError("Token quota wait would exceed run deadline.")
             self.trace(f"Quota pacing: estimated GPT tokens, wait {wait:.1f}s (no service retry)")
+            debug.emit("pacing.wait", kind="gpt-tokens", seconds=round(wait, 1))
             await self.sleep(wait)
 
     async def reserve(self, kind: str, actor: str, revision: int):
@@ -177,6 +233,7 @@ class Budget:
             if wait >= self.remaining():
                 raise DemoError("Quota wait would exceed run deadline.")
             self.trace(f"Quota pacing: {kind}, wait {wait:.1f}s (no service retry)")
+            debug.emit("pacing.wait", kind=kind, seconds=round(wait, 1))
             await self.sleep(wait)
             self.remaining()
         window.append(self.clock())
@@ -186,6 +243,8 @@ class Budget:
             self.per_revision[revision] += 1
         self.trace(f"Dispatch {kind}: {actor} revision={revision}; "
                    f"attempts GPT={self.counts['gpt']}/20 Decision-1={self.counts['decision']}/4")
+        debug.emit("budget.dispatch", kind=kind, actor=actor, revision=revision,
+                   gpt=self.counts["gpt"], decision=self.counts["decision"])
 
     def check_tool_batch(self, names: list[str], actor: str, revision: int):
         self.remaining()
@@ -221,33 +280,70 @@ class GuardedTransport(httpx.AsyncBaseTransport):
         if call is None:
             raise DemoError("Unbound model request blocked.")
         kind, actor, revision = call
-        gpt_path = ("/openai/v1/responses" if self.config.llm_profile == "gpt-6-luna"
-                    else "/openai/v1/chat/completions")
-        path = gpt_path if kind == "gpt" else "/providers/microsoft/v1/systemone"
+        path = self.config.gpt_path if kind == "gpt" else self.config.decision_path
         if request.method != "POST" or str(request.url) != self.config.endpoint + path:
             raise DemoError("Model request outside the configured Azure Foundry endpoint blocked.")
-        token_estimate = await self.budget.pace_tokens(request.content) if kind == "gpt" else None
-        await self.budget.reserve(kind, actor, revision)
-        if token_estimate is not None:
-            self.budget.token_window.append((self.budget.clock(), token_estimate))
-        started = self.budget.clock()
-        response = None
-        try:
-            response = await self.budget.bound(lambda: self.inner.handle_async_request(request), 60)
-            await self.budget.bound(response.aread, max(.001, 60 - (self.budget.clock() - started)))
-            if len(response.content) > 1_048_576:
-                raise DemoError("Model response exceeds bounded payload size.")
-            if kind == "gpt" and response.is_success:
-                self.check_completion(response, actor, revision)
-        except (DemoError, httpx.HTTPError) as exc:
-            error = diagnostic_error(f"{kind}/{actor} request failed; no retry or repair was made.",
-                                     exc, response)
-            if response is not None:
-                await response.aclose()
-            raise error from exc
-        self.budget.trace(f"Client round trip {kind}/{actor}: "
-                          f"{(self.budget.clock() - started) * 1000:.1f}ms; HTTP {response.status_code}")
-        return response
+        deadline = self.config.gpt_deadline if kind == "gpt" else REQUEST_DEADLINE
+        attempt, cause = 0, None
+        while True:
+            attempt += 1
+            try:
+                token_estimate = await self.budget.pace_tokens(request.content) if kind == "gpt" else None
+                await self.budget.reserve(kind, actor, revision)
+            except DemoError as exc:
+                if cause is None:
+                    raise
+                raise diagnostic_error(
+                    f"{kind}/{actor} request failed after a pre-send connect timeout; the single "
+                    f"transport retry was not permitted by budgets ({exc}); no repair was made.", cause,
+                ) from cause
+            if token_estimate is not None:
+                self.budget.token_window.append((self.budget.clock(), token_estimate))
+            started = self.budget.clock()
+            debug.emit("request.start", kind=kind, actor=actor, revision=revision, attempt=attempt,
+                       deadline_s=deadline, run_id=request.headers.get("x-run-id"))
+            response = None
+            try:
+                response = await self.budget.bound(lambda: self.inner.handle_async_request(request), deadline)
+                await self.budget.bound(response.aread, max(.001, deadline - (self.budget.clock() - started)))
+                if len(response.content) > 1_048_576:
+                    raise DemoError("Model response exceeds bounded payload size.")
+                if kind == "gpt" and response.is_success:
+                    self.check_completion(response, actor, revision)
+            except (DemoError, httpx.HTTPError) as exc:
+                debug.emit("request.error", kind=kind, actor=actor, attempt=attempt,
+                           error=type(exc).__name__, pre_send=response is None,
+                           elapsed_ms=round((self.budget.clock() - started) * 1000, 1))
+                if (
+                    kind == "gpt" and self.config.transport_retry and attempt == 1
+                    and response is None and isinstance(exc, httpx.ConnectTimeout)
+                ):
+                    # No request bytes were sent, so one retry cannot duplicate model work.
+                    cause = exc
+                    self.budget.transport_retries[(actor, revision)] += 1
+                    self.budget.trace(
+                        f"Transport retry gpt/{actor} revision={revision}: attempt 1 failed with a "
+                        "pre-send connect timeout; one retry subject to pacing and budgets"
+                    )
+                    continue
+                note = ("no retry or repair was made" if attempt == 1 else
+                        "attempt 2 after one pre-send connect-timeout retry; no repair was made")
+                error = diagnostic_error(f"{kind}/{actor} request failed; {note}.", exc, response)
+                if response is not None:
+                    await response.aclose()
+                raise error from exc
+            self.budget.trace(f"Client round trip {kind}/{actor}: "
+                              f"{(self.budget.clock() - started) * 1000:.1f}ms; HTTP {response.status_code}"
+                              + (f"; attempt {attempt}" if attempt > 1 else ""))
+            if debug.enabled():
+                try:
+                    usage = debug.usage_of(response.json())
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    usage = None
+                debug.emit("request.end", kind=kind, actor=actor, attempt=attempt,
+                           http_status=response.status_code, usage=usage,
+                           elapsed_ms=round((self.budget.clock() - started) * 1000, 1))
+            return response
 
     def check_completion(self, response, actor, revision):
         try:
@@ -348,21 +444,28 @@ class AzureRuntime:
             transport=GuardedTransport(config, budget, inner, scenario_id),
             timeout=60, follow_redirects=False, trust_env=False,
         )
-        self.provider = get_bearer_token_provider(self.credential, LLM_SCOPE)
+        self.run_id = str(uuid4())
+        self.provider = get_bearer_token_provider(self.credential, config.token_scope)
         self.sdks = {
             actor: AsyncOpenAI(
-                base_url=config.endpoint + "/openai/v1/", api_key=self.gpt_token,
-                max_retries=0, timeout=60, http_client=self.http,
+                base_url=config.gpt_base_url, api_key=self.gpt_token,
+                default_headers=self.apim_headers(actor),
+                max_retries=0, timeout=config.gpt_deadline, http_client=self.http,
                 organization="", project="",
             ) for actor in (*AGENTS, "coordinator")
         }
+
+    def apim_headers(self, actor: str) -> dict:
+        if not self.config.apim:
+            return {}
+        return {"x-agent-name": actor, "x-scenario": self.scenario_id, "x-run-id": self.run_id}
 
     async def gpt_token(self) -> str:
         return await self.budget.bound(lambda: asyncio.to_thread(self.provider), 15)
 
     async def decision_token(self) -> str:
         token = await self.budget.bound(
-            lambda: asyncio.to_thread(self.credential.get_token, DECISION_SCOPE), 15,
+            lambda: asyncio.to_thread(self.credential.get_token, self.config.decision_scope), 15,
         )
         return token.token
 
@@ -384,8 +487,8 @@ class DecisionClient:
             token = await runtime.decision_token()
             async with budget.stage("decision", actor, revision):
                 response = await runtime.http.post(
-                    runtime.config.endpoint + "/providers/microsoft/v1/systemone",
-                    headers={"Authorization": f"Bearer {token}"},
+                    runtime.config.endpoint + runtime.config.decision_path,
+                    headers={"Authorization": f"Bearer {token}", **runtime.apim_headers(actor)},
                     json={"model": runtime.config.decision_deployment, "state": state, "questions": questions},
                 )
         except ClientAuthenticationError as exc:
@@ -395,9 +498,11 @@ class DecisionClient:
         if not response.is_success:
             raise DemoError(f"Decision-1 returned HTTP {response.status_code}; no retry was made.")
         try:
-            return response.json()
+            payload = response.json()
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise DemoError("Decision-1 returned invalid JSON.") from exc
+        debug.emit("decision.response", actor=actor, revision=revision, raw=payload)
+        return payload
 
     async def assess_need(self, state: RunState):
         if state.scenario_id != self.runtime.scenario_id:

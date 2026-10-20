@@ -2533,10 +2533,34 @@ class ScopedFrameworkTests(unittest.IsolatedAsyncioTestCase):
                             return httpx.Response(200, json=payload)
                 return response
             service.override = alter
-            with self.subTest(actor=target, field=field), self.assertRaisesRegex(
-                    DemoError, f"Prose mismatch: actor={target}"):
-                await self.first_run("order-pull-forward-v2", service)
-            self.assertEqual(self.runtime.budget.counts, {"gpt": expected_calls, "decision": 2})
+            with self.subTest(actor=target, field=field):
+                _, state, _, _ = await self.first_run("order-pull-forward-v2", service)
+                found = state.prose_warnings.get(target, ())
+                self.assertTrue(any(w.field.startswith(field) for w in found), found)
+                self.assertTrue(all(w.rule_id.startswith("prose.") for w in found))
+
+    async def test_prose_warning_yields_pending_exit2_not_advisory_complete(self):
+        service, base = MockFoundry(), MockFoundry()
+        def alter(request, body):
+            response = base(request)
+            if request.url.path.endswith("/chat/completions"):
+                payload = response.json()
+                message = payload["choices"][0]["message"]
+                if message.get("content"):
+                    data = json.loads(message["content"])
+                    if data.get("agent_id") == "supply-chain":
+                        data["assessment"] = "Full-early pickup 2026-10-16 18:30."
+                        message["content"] = json.dumps(data)
+                        return httpx.Response(200, json=payload)
+            return response
+        service.override = alter
+        _, state, _, events = await self.first_run("order-pull-forward-v2", service)
+        results = [e.data for e in events if isinstance(getattr(e, "data", None), FinalResult)]
+        self.assertTrue(results)
+        self.assertEqual(results[-1].status, "pending")
+        self.assertEqual(results[-1].code, 2)
+        self.assertTrue(results[-1].warnings)
+        self.assertTrue(results[-1].reasons[0].startswith("Prose review required: "))
 
     async def test_two_options_are_scoped_by_actual_role_without_a_required_preference(self):
         from decision_v2.contracts import SupplyFinding, ProductionFinding, CommercialFinding

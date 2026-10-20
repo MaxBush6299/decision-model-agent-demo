@@ -124,6 +124,8 @@ class Presenter:
         self.line(f"{build.customer} | order {build.order_id}")
         self.line(build.context)
         expected = {"carrier-delay-v2": "0 (resolved carrier record)",
+                    "holdout-feasible-v2": "0 (resolved carrier record)",
+                    "holdout-uncertain-v2": "open (carrier confirmation and freight authority unresolved; route decided live)",
                     "production-resequence-v2": "1 (Production cell comparison)",
                     "order-pull-forward-v2": "3 (capacity, freight and customer tradeoffs)"}[self.scenario_id]
         self.line(f"Expected specialist route: {expected}. Live decisions may differ; no forced routing.")
@@ -315,6 +317,11 @@ class Presenter:
             elif reason.startswith("Unknown domain evidence: "):
                 keys = reason.removeprefix("Unknown domain evidence: ").split(", ")
                 self.line("Unresolved evidence: " + "; ".join(self.labels[k] for k in keys))
+            elif reason.startswith("Prose review required: "):
+                self.line("Prose review required: " + reason.removeprefix("Prose review required: "))
+                for warning in result.warnings:
+                    self.line(f"  Unverified prose [{warning.rule_id}] {warning.actor} / {warning.field}: "
+                              f"{warning.claim!r}; sourced {warning.expected}")
             else:
                 self.line("Unresolved: " + reason)
         if self.scenario_id == SCENARIO_ID:

@@ -19,6 +19,7 @@ from .contracts import (
 from .fixtures import ALLOWLIST, authoritative_constraints, delivery_position, domain_unknowns, fixture_records, fixture_payload, grounded_fixture_payload, issue_id, issue_text, scoped_option_disagreements, sourced_option_approvals
 from .runtime import AzureRuntime, CURRENT_CALL
 from .diagnostics import diagnostic_error
+from . import debug
 from .prose import validate_scoped_prose
 
 ROLE_INSTRUCTIONS = {
@@ -151,6 +152,8 @@ class FixtureGuard(FunctionMiddleware):
         record = fixture_records(self.state.scenario_id)[context.function.name]
         self.state.evidence[record.evidence_id] = fixture_payload(record)
         self.runtime.budget.trace(f"Evidence {record.evidence_id}: {json.dumps(fixture_payload(record))}")
+        debug.emit("tool.call", actor=self.actor, tool=context.function.name, args=args,
+                   evidence_id=record.evidence_id, result_chars=len(json.dumps(fixture_payload(record))))
 
 
 def fixture_tool(name: str, selected_scenario: ScenarioId = SCENARIO_ID, executed=None):
@@ -309,7 +312,9 @@ class ExpertTeam:
             if any(records[primary].evidence_id not in assessment.evidence_ids
                    for assessment in finding.option_assessments):
                 raise DemoError("Option assessment omitted its role's executed domain evidence.")
-            validate_scoped_prose(finding, actor, records, executed)
+            state.prose_warnings[actor] = validate_scoped_prose(finding, actor, records, executed, warn=True)
+        else:
+            state.prose_warnings.pop(actor, None)
         if not any(records[name].evidence_id in finding.evidence_ids for name in executed):
             raise DemoError("Specialist omitted citation of its actual fixture evidence.")
         filled = {e.key for e in state.overlays}
@@ -347,7 +352,8 @@ class ExpertTeam:
         validate_proposal(proposal, state)
         if len(options) > 1:
             records = fixture_records(state.scenario_id)
-            validate_scoped_prose(proposal, "coordinator", records, set(records))
+            state.prose_warnings["coordinator"] = validate_scoped_prose(
+                proposal, "coordinator", records, set(records), warn=True)
             required_conflicts = {conflict.model_dump_json() for conflict in evidence_disagreements(state)}
             if not required_conflicts.issubset({conflict.model_dump_json() for conflict in proposal.conflicts}):
                 raise DemoError("Coordinator omitted a sourced evidence disagreement conflict.")

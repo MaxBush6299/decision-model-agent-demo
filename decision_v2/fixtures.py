@@ -26,6 +26,8 @@ EXAMPLES: dict[str, ScenarioId] = {
     "carrier-delay": "carrier-delay-v2",
     "production-resequence": "production-resequence-v2",
     "order-pull-forward": "order-pull-forward-v2",
+    "holdout-feasible": "holdout-feasible-v2",
+    "holdout-uncertain": "holdout-uncertain-v2",
 }
 
 
@@ -77,12 +79,16 @@ class Shipment(FixtureRecord):
     notification_status: Literal["pending responsible Quality contact"] = "pending responsible Quality contact"
     replacement_lot_id: str = "L-1058"
     replacement_offer_id: str = "SUP-OFFER-300"
+    replacement_offer_status: str = (
+        "Unconfirmed supplier offer reference; not a selectable plan, accepted stock or approved supply."
+    )
     replacement_units: int = 300
     collection_possible: Literal[True] = True
     confirmed_arrival: str | None = None
     incoming_accepted: Literal[False] = False
     quote_id: str = "DQ-3600"
     freight_cost_usd: int = Field(default=3600, ge=0)
+    quote_status: str = "Quoted cost only; this record does not approve the freight or confirm a courier slot."
 
 
 class Delivery(StrictModel):
@@ -364,6 +370,7 @@ class OperationalBuild(FixtureRecord):
     cell: QualifiedCell | None = None
     packing_minutes: int = Field(default=0, ge=0)
     packing_station_confirmed: bool = True
+    quantity_basis: str | None = None
     other_orders: tuple[CommittedOrder, ...] = ()
     options: tuple[BuildOption, ...] = Field(default=(), max_length=2)
 
@@ -469,6 +476,8 @@ def operational_records(scenario_id: ScenarioId):
                 available_from="2026-10-15T14:30:00-05:00", available_until="2026-10-15T18:30:00-05:00",
                 staffed_shift_end="2026-10-15T20:00:00-05:00", setup_minutes=30, units_per_hour=160),
             packing_minutes=60,
+            quantity_basis="500 ordered = 100 released finished + 400 new build; the 440 released material "
+                           "units are feedstock for the 400 new units, not additional finished coverage.",
         )
         shipment = CarrierPlan(**metadata("shipment"), shipment_id="SH-902",
                                carrier="Fictional standard contracted carrier", **common)
@@ -495,6 +504,9 @@ def operational_records(scenario_id: ScenarioId):
                 staffed_shift_end="2026-10-15T20:00:00-05:00", setup_minutes=30, units_per_hour=120,
                 reserved_minutes_other_orders=120),
             packing_minutes=60,
+            quantity_basis="400 ordered = 160 released finished + 240 new build. Materials: 600 released "
+                           "- 200 reserved for SO-6702 = 400 available before consumption; building 240 "
+                           "leaves 160 remaining after the requirement.",
             other_orders=(CommittedOrder(order_id="SO-6702", quantity=200,
                 production_from="2026-10-15T17:00:00-05:00", production_until="2026-10-15T19:00:00-05:00",
                 delivery_at="2026-10-16T14:00:00-05:00", material_reserved_units=200),),
@@ -507,6 +519,48 @@ def operational_records(scenario_id: ScenarioId):
                "freight_cost_usd": 1800, "expedited": True, "commitment_reference": "EDI-AMENDMENT-CR-6701"})
         policy = OperatingPolicy(**metadata("policy"), customer_request_reference="EDI-AMENDMENT-CR-6701",
                                  customer_request_quantity=400, customer_request_due_at=shipment.window_end)
+    elif scenario_id == "holdout-feasible-v2":
+        inventory = ReleasedInventory(**metadata("inventory"), released_lot_id="L-1073",
+                                      released_units=450, release_reference="QA-REL-1073")
+        build = OperationalBuild(
+            **metadata("build"), title="Late carrier with approved alternate slot", order_id="SO-7301",
+            context="The standing carrier is delayed and now projects Friday 11:45, after the 08:30-10:30 "
+                    "window. All 450 units are released, packed and staged. An approved alternate carrier "
+                    "has a confirmed, documented slot.",
+            deliveries=(Delivery(order_line="10", quantity=450, due_at="2026-10-16T10:30:00-05:00"),),
+            production_units=0, finished_ready_at="2026-10-15T13:45:00-05:00",
+        )
+        shipment = CarrierPlan(
+            **metadata("shipment"), shipment_id="SH-731", carrier="Fictional approved regional carrier D",
+            service_kind="approved_alternative",
+            **{**common, "booking_cutoff": "2026-10-15T14:45:00-05:00",
+               "pickup_at": "2026-10-15T15:30:00-05:00", "transit_minutes": 1050,
+               "window_start": "2026-10-16T08:30:00-05:00", "window_end": "2026-10-16T10:30:00-05:00",
+               "commitment_reference": "EDI-SCHEDULE-7301", "freight_cost_usd": 1350},
+            original_carrier_arrival="2026-10-16T11:45:00-05:00",
+        )
+        policy = OperatingPolicy(**metadata("policy"))
+    elif scenario_id == "holdout-uncertain-v2":
+        inventory = ReleasedInventory(**metadata("inventory"), released_lot_id="L-1074",
+                                      released_units=380, release_reference="QA-REL-1074")
+        build = OperationalBuild(
+            **metadata("build"), title="Late carrier with unconfirmed alternate slot", order_id="SO-7302",
+            context="The standing carrier is delayed and now projects Friday 12:10, after the 08:30-10:30 "
+                    "window. All 380 units are released, packed and staged. An approved alternate carrier "
+                    "has offered a slot that has not been confirmed.",
+            deliveries=(Delivery(order_line="10", quantity=380, due_at="2026-10-16T10:30:00-05:00"),),
+            production_units=0, finished_ready_at="2026-10-15T13:20:00-05:00",
+        )
+        shipment = CarrierPlan(
+            **metadata("shipment"), shipment_id="SH-732", carrier="Fictional approved regional carrier E",
+            service_kind="approved_alternative", slot_confirmed=False,
+            **{**common, "confirmation_reference": None, "booking_cutoff": "2026-10-15T15:15:00-05:00",
+               "pickup_at": "2026-10-15T16:00:00-05:00", "transit_minutes": 1020,
+               "window_start": "2026-10-16T08:30:00-05:00", "window_end": "2026-10-16T10:30:00-05:00",
+               "commitment_reference": "EDI-SCHEDULE-7302", "freight_cost_usd": 3400},
+            original_carrier_arrival="2026-10-16T12:10:00-05:00",
+        )
+        policy = OperatingPolicy(**metadata("policy"))
     else:
         raise DemoError("Unsupported operational fixture.")
     if scenario_id == "production-resequence-v2":

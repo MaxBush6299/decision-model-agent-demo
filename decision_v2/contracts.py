@@ -11,8 +11,10 @@ SELECTION_OPTIONS = ("needed", "not_needed", "cannot_determine")
 ASSESSMENT_OPTIONS = ("assessment_needed", "no_further_assessment", "cannot_determine")
 VALIDATION_OPTIONS = ("Addresses the issue", "Needs revision", "Cannot determine")
 SCENARIO_ID = "quality-hold-v2"
-ScenarioId = Literal["quality-hold-v2", "carrier-delay-v2", "production-resequence-v2", "order-pull-forward-v2"]
-SCENARIO_IDS = ("quality-hold-v2", "carrier-delay-v2", "production-resequence-v2", "order-pull-forward-v2")
+ScenarioId = Literal["quality-hold-v2", "carrier-delay-v2", "production-resequence-v2", "order-pull-forward-v2",
+                     "holdout-feasible-v2", "holdout-uncertain-v2"]
+SCENARIO_IDS = ("quality-hold-v2", "carrier-delay-v2", "production-resequence-v2", "order-pull-forward-v2",
+                "holdout-feasible-v2", "holdout-uncertain-v2")
 ISSUE_ID = "issue:quality-hold-v2"
 THRESHOLD = .70
 AgentId = Literal["supply-chain", "production", "commercial"]
@@ -388,17 +390,32 @@ class ClarificationRequest:
     scenario_id: ScenarioId = SCENARIO_ID
 
 
+PROSE_REVIEW_PREFIX = "Prose review required: "
+
+
 @dataclass(frozen=True)
 class FinalResult:
     status: str
     code: int
     reasons: tuple[str, ...]
     proposal: CoordinatedProposal | None
+    warnings: tuple["ProseWarning", ...] = ()
+
+
+@dataclass(frozen=True)
+class ProseWarning:
+    """Host-owned, non-authoritative flag for a prose claim the narrow checks could not verify."""
+    actor: str
+    field: str
+    claim: str
+    rule_id: str
+    expected: str
 
 
 @dataclass
 class RunState:
     revision: int = 0
+    prose_warnings: dict[str, tuple[ProseWarning, ...]] = field(default_factory=dict)
     selections: dict[str, ChoiceAnswer] = field(default_factory=dict)
     active: list[str] = field(default_factory=list)
     uncertain: list[str] = field(default_factory=list)
