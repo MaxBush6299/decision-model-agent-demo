@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from math import ceil
+import re
 from types import MappingProxyType
 from typing import Literal
 from collections.abc import Iterable
@@ -601,6 +602,28 @@ def operational_position(records):
     }
 
 
+WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+
+
+def calendar_label(value: str) -> str:
+    instant = datetime.fromisoformat(value)
+    offset = instant.strftime("%z")
+    zone = f" UTC{offset[:3]}:{offset[3:]}" if offset else ""
+    return f"{WEEKDAYS[instant.weekday()]} {instant:%Y-%m-%d %H:%M}{zone}"
+
+
+def calendar_labels(value, path="") -> dict[str, str]:
+    if isinstance(value, dict):
+        return {key: label for name, item in value.items()
+                for key, label in calendar_labels(item, f"{path}.{name}" if path else name).items()}
+    if isinstance(value, (list, tuple)):
+        return {key: label for index, item in enumerate(value)
+                for key, label in calendar_labels(item, f"{path}.{index}").items()}
+    if isinstance(value, str) and re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}", value):
+        return {path: calendar_label(value)}
+    return {}
+
+
 def grounded_fixture_payload(name, records, executed):
     payload = fixture_payload(records[name])
     if not getattr(records["read_build"], "options", ()):
@@ -634,6 +657,9 @@ def grounded_fixture_payload(name, records, executed):
         derived["options"] = {
             option.option_id: {
                 "freight_total_usd": sum(leg.freight_cost_usd for leg in option.legs),
+                "arrivals": [(datetime.fromisoformat(leg.pickup_at)
+                              + timedelta(minutes=leg.transit_minutes)).isoformat()
+                             for leg in option.legs],
             } for option in records[name].options
         }
         derived["measurement_scope"] = "Aggregate incremental freight from shipment legs only; no manufacturing or authority assessment."
@@ -669,6 +695,10 @@ def grounded_fixture_payload(name, records, executed):
         derived["measurement_scope"] = "Existing planning permission, not executed customer acceptance or new approval. No manufacturing assessment."
     if "options" not in derived and "authority" not in derived:
         return payload
+    if name in ("read_build", "read_shipment"):
+        derived["calendar_labels"] = {
+            **calendar_labels(payload, "record"), **calendar_labels(derived, "derived"),
+        }
     payload["derived_evidence"] = derived
     return payload
 

@@ -142,7 +142,166 @@ class DiagnosticCaptureTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("SECRET_OPAQUE", json.dumps(record))
 
 
+class ScopedProseTests(unittest.TestCase):
+    def check(self, actor, text, *, field="assessment"):
+        from decision_v2.prose import validate_scoped_prose
+        from decision_v2.contracts import SupplyFinding, ProductionFinding, CommercialFinding
+        records = fixture_records("order-pull-forward-v2")
+        if actor == "coordinator":
+            value = SimpleNamespace(brief=text, selected_option_id="split-standard")
+        else:
+            model = {"production": ProductionFinding, "supply-chain": SupplyFinding,
+                     "commercial": CommercialFinding}[actor]
+            data = scoped_payload(actor)
+            if field == "option_assessments[full-early].assessment":
+                data["option_assessments"][0]["assessment"] = text
+            else:
+                data[field] = text
+            value = model.model_validate_json(json.dumps(data))
+        validate_scoped_prose(value, actor, records,
+                              set(records) if actor == "coordinator" else set(ALLOWLIST[actor]))
+
+    def test_wrong_calendar_claim_fails_with_actor_field_claim_and_build_source(self):
+        for text in ("Cell occupancy ends Friday 17:00.",
+                     "Cell occupancy is 14:30-17:00 Friday.",
+                     "Factory ready Friday 18:00.",
+                     "Factory ready Thursday 2026-10-22 18:00.",
+                     "Packing completes Friday 18:00."):
+            with self.subTest(text=text), self.assertRaises(DemoError) as caught:
+                self.check("production", text)
+            message = str(caught.exception)
+            for expected in ("production", "assessment", "claim", "Thursday 2026-10-15",
+                             "fixture:build:order-pull-forward-v2"):
+                self.assertIn(expected, message)
+
+    def test_correct_calendar_labels_and_unambiguous_eve_date_pass(self):
+        for text in (
+            "Cell occupancy ends Thursday 2026-10-15 17:00 UTC-05:00; "
+            "packing completes Thursday 2026-10-15 18:00 UTC-05:00.",
+            "Cell work ends at 17:00 Friday eve (2026-10-15), exactly when the reservation begins.",
+            "Full-early delivers Friday 09:00-10:00; factory readiness is Thursday 18:00.",
+            "A possible future Friday shift would need review.",
+        ):
+            with self.subTest(text=text):
+                self.check("production", text)
+
+    def test_shipment_weekday_check_uses_shipping_not_production_dates(self):
+        self.check("supply-chain", "Full-early pickup Thursday 18:30; arrival Friday 09:30.")
+        with self.assertRaisesRegex(DemoError, "supply-chain.*fixture:shipment"):
+            self.check("supply-chain", "Full-early pickup Friday 18:30.")
+
+    def test_iso_date_alone_is_checked_for_an_identifiable_sourced_event(self):
+        self.check("production", "Factory ready 2026-10-15 18:00.")
+        with self.assertRaisesRegex(DemoError, "production.*ready.*2026-10-15"):
+            self.check("production", "Factory ready 2026-10-16 18:00.")
+
+    def test_booking_date_is_not_attributed_to_the_later_pickup(self):
+        self.check("supply-chain", "Split-standard: booked by 2026-10-15 16:00, "
+                   "pickup Friday 05:30, delivery Friday 09:00-10:00.")
+
+    def test_unanchored_review_date_is_not_inferred_to_be_a_later_event_date(self):
+        self.check("supply-chain", "Plan reviewed 2026-10-14, full-early pickup Thursday 18:30.",
+                   field="option_assessments[full-early].assessment")
+
+    def test_explicit_quantity_names_work_in_both_natural_orders(self):
+        for text in ("Required cell minutes: 180.",
+                     "The plan needs 180 minutes of cell work.",
+                     "Packing is 90 minutes.",
+                     "Packing: 90 minutes.",
+                     "Available material units: 240."):
+            with self.subTest(text=text), self.assertRaises(DemoError):
+                self.check("production", text)
+        self.check("production", "Required cell minutes: 150. Packing: 60 minutes. "
+                   "Available material units: 400.")
+
+    def test_guard_preserves_raw_claims_and_does_not_scan_reported_conflicts(self):
+        from decision_v2.prose import validate_scoped_prose
+        from decision_v2.contracts import ProductionFinding
+        data = scoped_payload("production")
+        data["conflicts"] = [dict(subject_key="proposal_feedback",
+                                 evidence_ids=data["evidence_ids"],
+                                 description="Claim to verify: Factory ready Friday 18:00.")]
+        value = ProductionFinding.model_validate_json(json.dumps(data))
+        records = fixture_records("order-pull-forward-v2")
+        validate_scoped_prose(value, "production", records, set(ALLOWLIST["production"]))
+        value = value.model_copy(update={"assessment": "Factory ready Friday 18:00."})
+        before = value.model_dump_json()
+        with self.assertRaises(DemoError):
+            validate_scoped_prose(value, "production", records, set(ALLOWLIST["production"]))
+        self.assertEqual(value.model_dump_json(), before)
+
+    def test_specific_quantity_mismatch_fails_without_mutating_output(self):
+        for actor, field, text in (
+            ("production", "assessment", "Both options require 180 cell minutes."),
+            ("production", "implication", "Each has 270 available cell minutes."),
+            ("production", "option_assessments[full-early].assessment", "Packing takes 90 minutes."),
+            ("supply-chain", "assessment", "Full-early freight total is $2,800."),
+            ("coordinator", "brief", "Both options use 240 available material units after reservations."),
+            ("production", "assessment", "The plan requires 400 new units."),
+        ):
+            with self.subTest(actor=actor, text=text), self.assertRaises(DemoError) as caught:
+                self.check(actor, text, field=field)
+            for expected in (actor, field, "claim", "source"):
+                self.assertIn(expected, str(caught.exception))
+
+    def test_correct_quantities_option_scope_and_unsupported_language_are_not_guessed(self):
+        self.check("production", "Each requires 150 cell minutes against 180 available minutes; "
+                   "60 separate packing minutes and 240 new units are required.")
+        self.check("coordinator", "Full-early costs $1,800 incremental freight; split-standard freight "
+                   "total is $0. There are 400 available material units and 240 new units required.")
+        self.check("production", "Each requires 150 of 180 available cell minutes.")
+        self.check("coordinator", "Material headroom is comfortable; consider another shift.")
+        with self.assertRaisesRegex(DemoError, "freight_total_usd"):
+            self.check("supply-chain", "Split-standard freight total is $1,800.")
+
+    def test_prose_guard_does_not_apply_to_single_plan_or_quality(self):
+        from decision_v2.prose import validate_scoped_prose
+        for scenario in (SCENARIO_ID, "carrier-delay-v2"):
+            validate_scoped_prose(SimpleNamespace(assessment="Factory ready Friday 18:00."),
+                                  "production", fixture_records(scenario), {"read_build"})
+
+
 class OptionContractTests(unittest.TestCase):
+    def test_calendar_labels_follow_changed_source_dates_not_a_scenario_answer(self):
+        from decision_v2.fixtures import grounded_fixture_payload, calendar_labels
+        records = dict(fixture_records("order-pull-forward-v2"))
+        build = records["read_build"]
+        options = [option.model_copy(update={"cell": option.cell.model_copy(update={
+            "available_from": "2026-10-16T14:30:00-05:00",
+            "available_until": "2026-10-16T19:30:00-05:00",
+            "staffed_shift_end": "2026-10-16T19:30:00-05:00",
+        })}) for option in build.options]
+        records["read_build"] = build.model_copy(update={"options": tuple(options)})
+        derived = grounded_fixture_payload("read_build", records, {"read_build"})["derived_evidence"]
+        self.assertEqual(derived["calendar_labels"]["derived.options.full-early.ready_at"],
+                         "Friday 2026-10-16 18:00 UTC-05:00")
+        for name in ("read_build", "read_shipment"):
+            payload = grounded_fixture_payload(name, records, {name})
+            for path, label in calendar_labels(payload, "record").items():
+                if ".derived_evidence." not in path:
+                    self.assertEqual(payload["derived_evidence"]["calendar_labels"][path], label)
+
+    def test_scoped_calendar_labels_cover_raw_and_derived_build_and_shipment_times(self):
+        from decision_v2.fixtures import grounded_fixture_payload
+        records = fixture_records("order-pull-forward-v2")
+        build = grounded_fixture_payload("read_build", records, {"read_build"})["derived_evidence"]
+        labels = build["calendar_labels"]
+        self.assertEqual(labels["derived.options.full-early.cell_occupancy_end"],
+                         "Thursday 2026-10-15 17:00 UTC-05:00")
+        self.assertEqual(labels["derived.options.full-early.ready_at"],
+                         "Thursday 2026-10-15 18:00 UTC-05:00")
+        self.assertEqual(labels["record.other_orders.0.delivery_at"],
+                         "Friday 2026-10-16 14:00 UTC-05:00")
+        self.assertEqual(build["source_evidence_ids"], ["fixture:build:order-pull-forward-v2"])
+        self.assertNotIn("authority", build)
+        shipment = grounded_fixture_payload("read_shipment", records, {"read_shipment"})["derived_evidence"]
+        labels = shipment["calendar_labels"]
+        self.assertEqual(labels["record.options.0.legs.0.booking_cutoff"],
+                         "Thursday 2026-10-15 16:30 UTC-05:00")
+        self.assertEqual(labels["derived.options.full-early.arrivals.0"],
+                         "Friday 2026-10-16 09:30 UTC-05:00")
+        self.assertNotIn("authority", shipment)
+
     def test_grounding_uses_only_read_sources_and_preserves_records(self):
         from decision_v2.fixtures import grounded_fixture_payload, fixture_payload
         records = fixture_records("order-pull-forward-v2")
@@ -2267,6 +2426,39 @@ class ScopedFrameworkTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(commercial["options"]["split-standard"]["matches_documented_customer_planning_permission"])
         self.assertEqual(self.runtime.budget.counts, {"gpt": 7, "decision": 3})
 
+    async def test_recognizable_prose_date_error_stops_actual_actor_before_downstream_calls(self):
+        for target, field, expected_calls in (
+            ("supply-chain", "assessment", 2),
+            ("production", "implication", 4),
+            ("production", "option_assessments", 4),
+            ("commercial", "assessment", 6),
+            ("coordinator", "brief", 7),
+        ):
+            service, base = MockFoundry(), MockFoundry()
+            def alter(request, body):
+                response = base(request)
+                if request.url.path.endswith("/chat/completions"):
+                    payload = response.json()
+                    message = payload["choices"][0]["message"]
+                    if message.get("content"):
+                        data = json.loads(message["content"])
+                        actor = data.get("agent_id", "coordinator")
+                        if actor == target:
+                            text = ("Full-early pickup 2026-10-16 18:30." if target in
+                                    ("supply-chain", "commercial") else "Factory ready 2026-10-16 18:00.")
+                            if field == "option_assessments":
+                                data[field][0]["assessment"] = text
+                            else:
+                                data[field] = text
+                            message["content"] = json.dumps(data)
+                            return httpx.Response(200, json=payload)
+                return response
+            service.override = alter
+            with self.subTest(actor=target, field=field), self.assertRaisesRegex(
+                    DemoError, f"Prose mismatch: actor={target}"):
+                await self.first_run("order-pull-forward-v2", service)
+            self.assertEqual(self.runtime.budget.counts, {"gpt": expected_calls, "decision": 2})
+
     async def test_two_options_are_scoped_by_actual_role_without_a_required_preference(self):
         from decision_v2.contracts import SupplyFinding, ProductionFinding, CommercialFinding
         runtime, state, workflow, events = await self.first_run("order-pull-forward-v2")
@@ -2477,6 +2669,9 @@ class RoleInstructionTests(unittest.IsolatedAsyncioTestCase):
                                              if m["role"] in ("system", "developer"))
             if data["actor"] == "coordinator":
                 build = data["canonical_records"]["read_build"]
+                self.assertEqual(data["canonical_records"]["read_shipment"]["derived_evidence"][
+                    "calendar_labels"]["derived.options.full-early.arrivals.0"],
+                    "Friday 2026-10-16 09:30 UTC-05:00")
                 for option in build["derived_evidence"]["options"].values():
                     self.assertEqual(option["cell_occupancy_end"], "2026-10-15T17:00:00-05:00")
                     self.assertEqual(option["packing_end"], "2026-10-15T18:00:00-05:00")
@@ -2496,6 +2691,13 @@ class RoleInstructionTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("Quality", prompt)
             self.assertIn("untrusted", prompt)
             self.assertIn("unverified", prompt)
+        for prompt in prompts.values():
+            self.assertIn("quote calendar_labels verbatim", prompt)
+        commercial = prompts["commercial"]
+        for phrase in ("changes_customer_commitment=false", "confirmed window",
+                       "null only when the record is silent",
+                       "matches_documented_customer_planning_permission"):
+            self.assertIn(phrase, commercial)
 
     async def test_specialists_receive_domain_process_without_coordinator_join_duties(self):
         runtime, state, workflow, events = await self.first_run("order-pull-forward-v2")

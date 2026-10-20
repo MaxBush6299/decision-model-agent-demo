@@ -461,3 +461,41 @@ run9's full proposal/source checks with the original supplied evidence ledger.
 This is one full scoped advisory acceptance, not guaranteed repeatability or
 execution authority. Stop early:2/3 new runs used, run10 not executed.
 No code/prompt/schema changes between runs, retries, repairs or normalization.
+
+## User-approved offline calendar, Commercial and prose follow-up
+
+Following the separate repeatability batch10-14, approval covers offline
+implementation and replay only; no new live run is authorized.
+
+- Build/shipment derived evidence adds `calendar_labels` for raw and derived
+  ISO timestamps, including calculated shipment arrivals. Each label includes
+  English weekday, ISO date/time and UTC offset and retains its own record's
+  provenance. All four two-option prompts quote labels verbatim; Coordinator
+  receives grounded build and shipment records. Quality/single-plan prompts and
+  payload behavior stay unchanged.
+- Commercial reports false customer-commitment change within documented windows
+  or when fulfilling a documented planning request, true only for a sourced
+  departure from a confirmed window, null only for a silent record. It uses the
+  existing permission/window checks. No host rewriting of true/null claims;
+  existing sourced contradictions and Coordinator preservation stay unchanged.
+- A narrow deterministic prose guard runs at specialist acceptance and
+  Coordinator acceptance, before further downstream inference. Recognized
+  weekday/time/range/ISO-date claims are compared with sourced event dates;
+  named required/available cell minutes, packing minutes, freight totals and
+  required/available material figures are compared with executed/canonical
+  option evidence. An identifiable mismatch fails closed with actor, exact
+  field/option, claim, expected value and source ID, consistent with existing
+  invalid-output handling rather than fabricating conflict objects or repairing
+  raw output. Existing conflict descriptions are not recast as asserted facts.
+  Ambiguous option/leg dates and unrecognized prose are not inferred; this is
+  not general NLP validation or a general clock-time solver.
+
+Offline replay preserves run10's original commitment-preservation failure,
+passes run11, flags Production's calendar prose in12/13 and independently flags
+run12 Coordinator's240-available versus400-source material claim. Run14's two
+completed findings pass, but absent Commercial/Coordinator outputs cannot be
+recovered or called a pass. Replay makes no new Decision-1 scoring claim.
+All209 offline tests pass. Schemas, ownership,60s request timeout, pacing,
+call/tool/time caps, auth and Luna2400 Responses/default Chat1200 remain
+unchanged. No retries, repair, normalization, dependency/site/v1/cloud changes
+or push; prompt effectiveness and live acceptance await separate authorization.
