@@ -7,7 +7,7 @@ from agent_framework import (
 from .agents import ExpertTeam
 from .contracts import (
     AGENTS, AFFECTED, SCENARIO_ID, ClarificationRequest, DemoError, FinalResult, HumanEvidence,
-    HumanResponse, RunState, ScopedFinding, affected_agents,
+    HumanResponse, PROSE_REVIEW_PREFIX, RunState, ScopedFinding, affected_agents,
 )
 from .fixtures import assessment_blockers, fixture_records, option_disagreements, policy_requirements, validate_delivery_change, scoped_option_disagreements
 from .presentation import Presenter
@@ -125,6 +125,11 @@ def review_reasons(state: RunState) -> list[str]:
             reasons.append("Conflicting/unverified evidence remains.")
     if state.policies:
         reasons.append("Mandatory approval handoff: " + ", ".join(state.policies))
+    warnings = [w for items in state.prose_warnings.values() for w in items]
+    if warnings:
+        reasons.append(PROSE_REVIEW_PREFIX + f"{len(warnings)} unverified prose claim(s) in "
+                       + ", ".join(sorted({w.actor for w in warnings}))
+                       + "; the host did not rewrite them and they are not canonical evidence.")
     return reasons
 
 
@@ -147,8 +152,13 @@ class ReviewExecutor(Executor):
                 raise DemoError("Incomplete assessment cannot finish successfully.")
             await ctx.yield_output(FinalResult("advisory_complete", 0, (), state.proposal))
             return
+        warnings = tuple(w for items in state.prose_warnings.values() for w in items)
         if state.continuation_used:
-            await ctx.yield_output(FinalResult("handoff", 2, tuple(reasons), state.proposal))
+            await ctx.yield_output(FinalResult("handoff", 2, tuple(reasons), state.proposal, warnings))
+            return
+        if all(reason.startswith(PROSE_REVIEW_PREFIX) for reason in reasons):
+            # Human clarification cannot resolve a host prose warning, so no continuation is offered.
+            await ctx.yield_output(FinalResult("pending", 2, tuple(reasons), state.proposal, warnings))
             return
         allowed = set()
         if state.scenario_id == SCENARIO_ID:

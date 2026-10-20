@@ -1,10 +1,13 @@
 """Deliberately limited recognition of sourced calendar and quantity claims."""
 
 import re
+from contextvars import ContextVar
 from datetime import date, datetime
 
-from .contracts import DemoError
+from .contracts import DemoError, ProseWarning
 from .fixtures import WEEKDAYS, calendar_label, grounded_fixture_payload
+
+PROSE_SINK = ContextVar("prose_sink", default=None)
 
 
 DAY = re.compile(r"\b(" + "|".join(WEEKDAYS) + r")\b", re.I)
@@ -91,6 +94,10 @@ def source_figures(records, executed):
 
 def fail(actor, field, claim, key, expected):
     sources = "; ".join(f"{value} ({source})" for value, source in expected)
+    sink = PROSE_SINK.get()
+    if sink is not None:
+        sink.append(ProseWarning(actor, field, str(claim), f"prose.{key}", f"{key}={sources}"))
+        return
     raise DemoError(f"Prose mismatch: actor={actor}; field={field}; claim={claim!r}; "
                     f"source {key}={sources}. No rewrite or repair was made.")
 
@@ -185,15 +192,23 @@ def check_quantities(text, actor, field, figures, explicit):
                 fail(actor, field, claim, key, expected)
 
 
-def validate_scoped_prose(value, actor, records, executed):
+def validate_scoped_prose(value, actor, records, executed, *, warn=False):
+    """Prose-only checks. Default raises (legacy); warn=True returns host ProseWarnings instead."""
     if len(getattr(records["read_build"], "options", ())) < 2:
-        return
+        return ()
     figures, events = source_figures(records, executed)
     texts = ([("brief", value.brief, None)] if actor == "coordinator" else [
         ("assessment", value.assessment, None), ("implication", value.implication, None),
         *[(f"option_assessments[{item.option_id}].assessment", item.assessment, item.option_id)
           for item in value.option_assessments],
     ])
-    for field, text, explicit in texts:
-        check_calendar(text, actor, field, events, explicit)
-        check_quantities(text, actor, field, figures, explicit)
+    found = []
+    token = PROSE_SINK.set(found) if warn else None
+    try:
+        for field, text, explicit in texts:
+            check_calendar(text, actor, field, events, explicit)
+            check_quantities(text, actor, field, figures, explicit)
+    finally:
+        if token is not None:
+            PROSE_SINK.reset(token)
+    return tuple(dict.fromkeys(found))

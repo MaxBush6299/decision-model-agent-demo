@@ -388,17 +388,32 @@ class ClarificationRequest:
     scenario_id: ScenarioId = SCENARIO_ID
 
 
+PROSE_REVIEW_PREFIX = "Prose review required: "
+
+
 @dataclass(frozen=True)
 class FinalResult:
     status: str
     code: int
     reasons: tuple[str, ...]
     proposal: CoordinatedProposal | None
+    warnings: tuple["ProseWarning", ...] = ()
+
+
+@dataclass(frozen=True)
+class ProseWarning:
+    """Host-owned, non-authoritative flag for a prose claim the narrow checks could not verify."""
+    actor: str
+    field: str
+    claim: str
+    rule_id: str
+    expected: str
 
 
 @dataclass
 class RunState:
     revision: int = 0
+    prose_warnings: dict[str, tuple[ProseWarning, ...]] = field(default_factory=dict)
     selections: dict[str, ChoiceAnswer] = field(default_factory=dict)
     active: list[str] = field(default_factory=list)
     uncertain: list[str] = field(default_factory=list)
