@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { RecordingsPage } from './RecordingsPage';
-import { chipOf, flowAt, kpis, outcomeOf, routingOf, transcriptSections, type Recording } from '../recordings/model';
+import { chipOf, flowAt, recommendation, kpis, outcomeOf, routingOf, transcriptSections, type Recording } from '../recordings/model';
 
 const dir = join(process.cwd(), 'public', 'recordings', 'v2');
 const load = <T,>(f: string) => JSON.parse(readFileSync(join(dir, f), 'utf8')) as T;
@@ -130,4 +130,14 @@ it('demo mode hides detail panels, keeps one footnote, and reveals terminal sect
   fireEvent.click(screen.getByRole('button', { name: /Live step/ }));
   expect(screen.queryByRole('complementary', { name: 'Live step' })).toBeNull();
   sessionStorage.clear();
+});
+it('extracts the recorded Coordinator proposal verbatim for every scenario', () => {
+  const c = recommendation(load<Recording>('carrier-delay.json'))!;
+  expect(c.proposal).toContain('use the documented slot with approved carrier B');
+  expect(c.proposal).toContain('No execution or delivery guarantee is made.');
+  expect(c.fields.find((f) => f.label === 'Next step')?.text).toContain('approved alternative carrier');
+  expect(c.validation).toContain('Addresses the issue');
+  for (const f of ['quality-hold', 'production-resequence', 'order-pull-forward', 'carrier-delay.C01']) {
+    expect(recommendation(load<Recording>(f + '.json'))?.proposal.length).toBeGreaterThan(50);
+  }
 });

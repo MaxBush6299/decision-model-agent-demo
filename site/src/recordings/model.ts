@@ -280,3 +280,30 @@ export function finalReason(rec: Recording): string[] {
   const last = secs[secs.length - 1];
   return last ? last.lines.slice(1).filter((l) => l.trim() && !/^Actual model attempts/.test(l)) : [];
 }
+
+export interface Recommendation {
+  proposal: string;
+  fields: { label: string; text: string }[];
+  validation: string;
+}
+
+const PLAN_FIELD_RE = /^(Initial coordinator proposal|Next step|Selected planning option|Missing evidence|Preserved disagreement|Decision-1 proposal validation \(not execution\)|Required owner handoffs):\s*(.*)$/;
+
+/** The Coordinator's recorded proposal, verbatim from the INITIAL PLAN transcript section (re-joined from hard-wrapped lines). */
+export function recommendation(rec: Recording): Recommendation | undefined {
+  const sec = transcriptSections(rec).find((s) => s.title === 'INITIAL PLAN');
+  if (!sec) return undefined;
+  const fields: { label: string; text: string }[] = [];
+  for (const line of sec.lines.slice(1)) {
+    const m = PLAN_FIELD_RE.exec(line);
+    if (m) fields.push({ label: m[1], text: m[2] });
+    else if (fields.length) fields[fields.length - 1].text += ` ${line.trim()}`;
+  }
+  const take = (label: string) => fields.find((f) => f.label === label)?.text;
+  const proposal = take('Initial coordinator proposal');
+  if (!proposal) return undefined;
+  const rest = ['Next step', 'Selected planning option', 'Missing evidence', 'Preserved disagreement', 'Required owner handoffs']
+    .map((label) => ({ label, text: take(label) }))
+    .filter((f): f is { label: string; text: string } => !!f.text);
+  return { proposal, fields: rest, validation: take('Decision-1 proposal validation (not execution)') ?? '' };
+}

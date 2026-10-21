@@ -231,3 +231,8 @@ main:has(.rec-compact) .workspace-header .main-nav a, main:has(.rec-compact) .si
 .rec-compact .rec-kpi strong { overflow:hidden; text-overflow:ellipsis; }
 .rec-edge-label-fix {}
 text.edge-label-top { font-size:9.5px; fill:#6b7782; font-style:italic; paint-order:stroke; stroke:#fbf9f3; stroke-width:3px; stroke-linejoin:round; pointer-events:none; }
+
+.rec-recommend { margin:6px 0; padding:8px 10px; border-left:4px solid #1f8a5b; background:#eef8f2; border-radius:4px; font-size:13px; }
+.rec-recommend h4 { margin:0 0 4px; font-size:13px; }
+.rec-recommend p { margin:3px 0; overflow-wrap:anywhere; }
+.rec-recommend-tag { font-weight:400; font-size:11px; color:#5b6b61; margin-left:6px; }

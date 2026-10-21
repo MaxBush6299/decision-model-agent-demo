@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  attemptLabel, chipOf, kpis, outcomeOf, playbackDelayMs, routingOf, requestCard, finalReason, stepExplain, SCENARIO_SUMMARIES, SCENARIO_TITLES, stepLabel, transcriptSections,
+  attemptLabel, chipOf, kpis, outcomeOf, playbackDelayMs, routingOf, requestCard, finalReason, recommendation, stepExplain, SCENARIO_SUMMARIES, SCENARIO_TITLES, stepLabel, transcriptSections,
   type IndexEntry, type Recording, type TimelineEvent,
 } from '../recordings/model';
 import { FlowCanvas } from '../recordings/FlowCanvas';
@@ -272,17 +272,35 @@ function LiveStep({ rec, e, started, idx, total }: { rec: Recording; e: Timeline
             ))}
           </div>
         ))}
+        {(e.kind === 'final' || (e.kind === 'model_call_end' && e.actor === 'coordinator')) && <Recommendation rec={rec} final={e.kind === 'final'} />}
         {e.kind === 'final' && (
           <div className="rec-final">
-            <p>Host status <strong>{e.status}</strong> (code {e.code}) · warnings {e.warnings} · GPT attempts {e.gpt_attempts} · Decision-1 attempts {e.decision_attempts}</p>
+            <p>Host status <strong>{e.status}</strong> (code {e.code})</p>
+            {recommendation(rec)?.validation && <p className="note">Decision-1 validation of the proposal: {recommendation(rec)?.validation}</p>}
             {finalReason(rec).map((l, i) => <p key={i} className="note">{l}</p>)}
+            <p className="note">Warnings {e.warnings} · GPT attempts {e.gpt_attempts} · Decision-1 attempts {e.decision_attempts}</p>
           </div>
         )}
       </div>
       <p className="rec-caption">From the recorded event, not a re-enactment.</p>
     </aside>
   );
-}function donutSegments(r: ReturnType<typeof routingOf>) {
+}
+
+function Recommendation({ rec, final }: { rec: Recording; final: boolean }) {
+  const r = recommendation(rec);
+  if (!r) return null;
+  return (
+    <section className="rec-recommend" aria-label="Recommendation">
+      <h4>Recommendation <span className="rec-recommend-tag">advisory proposal · nothing executed</span></h4>
+      <p>{r.proposal}</p>
+      {r.fields.map((f) => <p key={f.label} className="note"><strong>{f.label}:</strong> {f.text}</p>)}
+      {!final && <p className="note">The Coordinator’s recorded proposal, before Decision-1 validation.</p>}
+    </section>
+  );
+}
+
+function donutSegments(r: ReturnType<typeof routingOf>) {
   if (!r) return [];
   const total = r.consult.length + r.skipped.length + r.uncertain.length || 1;
   const C = 251.33;
