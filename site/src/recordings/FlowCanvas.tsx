@@ -1,16 +1,16 @@
 import { FLOW_NODES, flowAt, stepLabel, type FlowNode, type TimelineEvent } from './model';
 
-const NW = 110;
+const NW = 112;
 const NH = 64;
-const COL = [20, 190, 360, 530, 700, 870, 1040];
-const MAIN_Y = 196;
+const COL = [10, 160, 310, 460, 610, 760, 910];
+const MAIN_Y = 130;
 const POS: Record<FlowNode, { x: number; y: number }> = {
   request: { x: COL[0], y: MAIN_Y },
   d1: { x: COL[1], y: MAIN_Y },
   routing: { x: COL[2], y: MAIN_Y },
-  'supply-chain': { x: COL[3], y: 36 },
+  'supply-chain': { x: COL[3], y: 0 },
   production: { x: COL[3], y: MAIN_Y },
-  commercial: { x: COL[3], y: 356 },
+  commercial: { x: COL[3], y: 260 },
   coordinator: { x: COL[4], y: MAIN_Y },
   validation: { x: COL[5], y: MAIN_Y },
   final: { x: COL[6], y: MAIN_Y },
@@ -92,7 +92,7 @@ export function FlowCanvas({ timeline, idx }: { timeline: TimelineEvent[]; idx: 
 
   return (
     <div className="rec-canvas" role="group" aria-label="Request flow">
-      <svg viewBox="0 0 1190 470" role="img" aria-label="Request flow canvas" className="rec-svg">
+      <svg viewBox="0 -6 1032 396" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Request flow canvas" className="rec-svg">
         <defs>
           {(['request', 'async', 'hold'] as EdgeKind[]).map((k) => (
             <marker key={k} id={`arrow-${k}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -102,7 +102,7 @@ export function FlowCanvas({ timeline, idx }: { timeline: TimelineEvent[]; idx: 
         </defs>
         {EDGES.map((e) => {
           const s = edgeState(e);
-          const bow = e.id === 'routing-coordinator' ? 150 : 0;
+          const bow = e.id === 'routing-coordinator' ? 110 : 0;
           const d = path(e, bow);
           const m = mid(e, bow);
           return (

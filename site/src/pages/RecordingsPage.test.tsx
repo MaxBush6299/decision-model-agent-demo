@@ -112,7 +112,12 @@ it('demo mode hides detail panels, keeps one footnote, and reveals terminal sect
   expect(screen.queryByText(/No live calls/)).toBeNull();
   expect(screen.getByText(/Replay of a real recorded run, selected after the fact\./)).toBeTruthy();
   expect(screen.getByRole('region', { name: 'Run summary' })).toBeTruthy();
+  expect(screen.queryByRole('complementary', { name: 'Live step' })).toBeNull();
+  const tab = screen.getByRole('button', { name: /Live step/ });
+  expect(tab.getAttribute('aria-expanded')).toBe('false');
+  fireEvent.click(tab);
   expect(screen.getByText(/Press play/)).toBeTruthy();
+  expect(sessionStorage.getItem('showcase-live-pane')).toBe('open');
   expect(container.querySelector('.rec-terminal')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Show terminal' }));
   const count = () => container.querySelectorAll('.rec-term-sec').length;
@@ -122,4 +127,7 @@ it('demo mode hides detail panels, keeps one footnote, and reveals terminal sect
   expect(screen.queryByText(/Press play/)).toBeNull();
   expect(screen.getByRole('complementary', { name: 'Live step' }).textContent).toMatch(/Host status/);
   expect(container.querySelectorAll('.rec-term-sec.active')).toHaveLength(1);
+  fireEvent.click(screen.getByRole('button', { name: /Live step/ }));
+  expect(screen.queryByRole('complementary', { name: 'Live step' })).toBeNull();
+  sessionStorage.clear();
 });

@@ -79,6 +79,8 @@ function Viewer({ entry, runId, detail }: { entry: IndexEntry; runId?: string; d
   const [tour, setTour] = useState<number | null>(null);
   const [started, setStarted] = useState(false);
   const [drawer, setDrawer] = useState(false);
+  const [livePane, setLivePane] = useState(() => { try { return sessionStorage.getItem('showcase-live-pane') === 'open'; } catch { return false; } });
+  const toggleLive = () => { const n = !livePane; setLivePane(n); try { sessionStorage.setItem('showcase-live-pane', n ? 'open' : 'closed'); } catch { /* ignore */ } };
 
   useEffect(() => {
     if (!file) { setError(`Run ${showId} is not part of this recording set.`); return; }
@@ -161,7 +163,13 @@ function Viewer({ entry, runId, detail }: { entry: IndexEntry; runId?: string; d
               <p className="rec-clock" aria-live="polite">Step {idx + 1} of {timeline.length} · recorded time {current.t_offset_s.toFixed(1)} s{skipWaits ? ' · long gaps compressed in playback' : ''}</p>
               <p className="rec-footnote">{isSelected ? 'Replay of a real recorded run, selected after the fact.' : 'Replay of a real recorded attempt that was not the selected run.'}</p>
             </section>
-            <LiveStep e={current} started={started} />
+            <div             className={`rec-livewrap${livePane ? ' open' : ''}`}>              <button type="button" className="rec-live-tab" aria-expanded={livePane} aria-controls="rec-live-pane" onClick={toggleLive}>
+                <span className="rec-live-tab-title">Live step {livePane ? '›' : '‹'}</span>
+                {started && <span className={`rec-tag tag-${chipOf(current)}`}>{chipOf(current)}</span>}
+                {started && !livePane && <span className="rec-live-tab-actor">{stepLabel(current)}</span>}
+              </button>
+              {livePane && <div id="rec-live-pane" className="rec-livebody"><LiveStep e={current} started={started} /></div>}
+            </div>
           </div>
 
           <section className={`rec-kpis${focus('kpis')}`} aria-label="Run summary" title="Counts come from the recorded debug events. Token usage is as returned by the service; a request without usage counts as zero here.">
