@@ -74,22 +74,19 @@ export function IntroPage() {
       </section>
 
       <section className="home-launchpad" aria-labelledby="home-paths-title">
-        <h3 id="home-paths-title">Now follow a recorded decision</h3>
+        <h3 id="home-paths-title">Go deeper</h3>
         <div className="home-path-cards">
           <article className="home-path-card">
-            <h4>Follow the recorded shortage</h4>
-            <p>Five steps through one factory shortage: the issue, routing, specialist advice, validation, and human review.</p>
-            <a className="home-start" href="#learn">Follow the recorded shortage</a>
-            <small>One recorded case with synthetic facts.</small>
+            <h4>Learn: how decision models work</h4>
+            <p>An in-depth dive into what a decision model decides, and how routing, specialist advice, validation, and human review fit together in one worked example.</p>
+            <a className="home-start" href="#learn">Dive into how it works</a>
           </article>
           <article className="home-path-card">
             <h4>Demo showcase</h4>
-            <p>Replay four recorded scenarios on one diagram of agents working a case, from Decision-1 routing to the final check.</p>
-            <a className="home-start home-start-secondary" href="#showcase">Open the Demo showcase</a>
-            <small>Replays were selected after the fact; not a reliability measure.</small>
+            <p>Explore more sample scenarios and go deeper into the flow: four scenarios replayed on one diagram of agents working a case.</p>
+            <a className="home-start home-start-secondary" href="#showcase">Explore the scenarios</a>
           </article>
         </div>
-        <p className="home-provenance">Recorded runs of synthetic cases. Nothing is executed, and opening these makes no new model calls.</p>
       </section>
 
       <details className="home-support">

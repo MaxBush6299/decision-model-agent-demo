@@ -35,12 +35,11 @@ it.each(['/', '/#intro', '/workspace/?lesson=start'])('opens Home for %s without
   expect(screen.getByRole('heading', { level: 1, name: 'Decision Models' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Decision Models' })).toHaveAttribute('href', '#intro');
   expect(screen.getByRole('heading', { name: 'Explore how decision models work' })).toBeInTheDocument();
-  expect(screen.getByText(/One recorded case with synthetic facts/)).toBeInTheDocument();
   expect(screen.queryByText(/Synthetic evidence only\. No external actions executed\./)).not.toBeInTheDocument();
   expect(nav().getAllByRole('link').map((link) => link.textContent)).toEqual(['Home', 'Learn', 'Demo showcase']);
   expect(nav().getByRole('link', { name: 'Home' })).toHaveAttribute('aria-current', 'page');
   expect(nav().getByRole('link', { name: 'Learn' })).not.toHaveAttribute('aria-current');
-  expect(screen.getByRole('link', { name: 'Follow the recorded shortage' })).toHaveAttribute('href', '#learn');
+  expect(screen.getByRole('link', { name: 'Dive into how it works' })).toHaveAttribute('href', '#learn');
   expect(document.querySelector('a[href="#run"], a[href="#compare"]')).toBeNull();
   expect(fetchMock).not.toHaveBeenCalled();
 });

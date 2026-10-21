@@ -324,7 +324,7 @@ it('keeps loading and every step offline while retaining route semantics and Hom
   });
   expect(nav.getByRole('link', { name: 'Home' })).toHaveAttribute('aria-current', 'page');
   fireEvent.click(screen.getByText('Sources and context'));
-  expect(screen.getByRole('link', { name: 'Follow the recorded shortage' })).toHaveAttribute('href', '#learn');
+  expect(screen.getByRole('link', { name: 'Dive into how it works' })).toHaveAttribute('href', '#learn');
   expect(within(screen.getByRole('region', { name: 'Sources and what they support' })).getAllByRole('link')).toHaveLength(3);
 });
 
