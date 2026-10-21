@@ -91,7 +91,7 @@ it('switches between recorded-runs routes on hash change without falling back to
   const fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => [] }));
   vi.stubGlobal('fetch', fetchMock);
   render(<App />);
-  expect(await screen.findByText(/Watch real runs/)).toBeTruthy();
+  expect(await screen.findByText(/Pick a replay/)).toBeTruthy();
   navigate('#recordings/nope');
   expect(await screen.findByRole('alert')).toBeTruthy();
   expect(window.location.hash).toBe('#recordings/nope');

@@ -77,8 +77,60 @@ export type Outcome = 'complete' | 'pending' | 'other';
 export function outcomeOf(rec: Recording): { kind: Outcome; label: string } {
   const fin = rec.timeline.find((e) => e.kind === 'final');
   if (fin?.status === 'advisory_complete') return { kind: 'complete', label: 'Advisory complete' };
-  if (fin?.status === 'pending') return { kind: 'pending', label: 'Held for a person (pending)' };
+  if (fin?.status === 'pending') {
+    const note = rec.disclosure.all_attempts.find((a) => rec.recording_alias.endsWith(a.id))?.review_note ?? '';
+    return { kind: 'pending', label: /validation/i.test(note) ? 'Pending: validation below policy' : 'Held for a person (pending)' };
+  }
   return { kind: 'other', label: fin?.status ?? 'No final event recorded' };
+}
+
+export function attemptLabel(a: Attempt): string {
+  if (a.host_status === 'advisory_complete') return 'Advisory complete';
+  return /validation/i.test(a.review_note) ? 'Pending: validation below policy' : 'Held for a person (pending)';
+}
+
+export type FlowNode = 'request' | 'd1' | 'routing' | 'supply-chain' | 'production' | 'commercial' | 'coordinator' | 'validation' | 'final';
+export const FLOW_NODES: { id: FlowNode; label: string; sub: string }[] = [
+  { id: 'request', label: 'Request', sub: 'Synthetic case' },
+  { id: 'd1', label: 'Decision-1', sub: 'Need assessment + selection' },
+  { id: 'routing', label: 'Host routing', sub: 'Policy code' },
+  { id: 'supply-chain', label: 'Supply-chain', sub: 'Specialist (GPT)' },
+  { id: 'production', label: 'Production', sub: 'Specialist (GPT)' },
+  { id: 'commercial', label: 'Commercial', sub: 'Specialist (GPT)' },
+  { id: 'coordinator', label: 'Coordinator', sub: 'GPT' },
+  { id: 'validation', label: 'Decision-1 validation', sub: 'Scores the proposal' },
+  { id: 'final', label: 'Final status', sub: 'Host policy code' },
+];
+
+/** Node a recorded event belongs to; null when the event does not belong to a drawn node (waits keep the prior node). */
+export function nodeOf(e: TimelineEvent): FlowNode | null {
+  switch (e.kind) {
+    case 'run_start': return 'request';
+    case 'routing': return 'routing';
+    case 'final': return 'final';
+    case 'pacing_wait': return null;
+    default:
+      if (e.actor === 'assessment' || e.actor === 'selection') return 'd1';
+      if (e.actor === 'supply-chain' || e.actor === 'production' || e.actor === 'commercial' || e.actor === 'coordinator' || e.actor === 'validation') return e.actor;
+      return null;
+  }
+}
+
+export interface FlowState { active: FlowNode | null; visited: Set<FlowNode>; skipped: Set<FlowNode>; waiting: boolean; tool?: string }
+
+export function flowAt(timeline: TimelineEvent[], idx: number): FlowState {
+  const st: FlowState = { active: null, visited: new Set(), skipped: new Set(), waiting: false };
+  for (let i = 0; i <= idx && i < timeline.length; i++) {
+    const e = timeline[i];
+    const n = nodeOf(e);
+    if (e.kind === 'routing' && e.detail?.effective) {
+      for (const [name, v] of Object.entries(e.detail.effective)) if (v === 'not_needed') st.skipped.add(name as FlowNode);
+    }
+    st.waiting = e.kind === 'pacing_wait';
+    st.tool = e.kind === 'tool_call' ? e.tool : undefined;
+    if (n) { if (st.active && st.active !== n) st.visited.add(st.active); st.active = n; }
+  }
+  return st;
 }
 
 export interface Kpis {

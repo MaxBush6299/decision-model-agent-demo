@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { RecordingsPage } from './RecordingsPage';
-import { chipOf, kpis, outcomeOf, routingOf, transcriptSections, type Recording } from '../recordings/model';
+import { chipOf, flowAt, kpis, outcomeOf, routingOf, transcriptSections, type Recording } from '../recordings/model';
 
 const dir = join(process.cwd(), 'public', 'recordings', 'v2');
 const load = <T,>(f: string) => JSON.parse(readFileSync(join(dir, f), 'utf8')) as T;
@@ -31,9 +31,8 @@ it('derives outcomes, counts and routing from recordings', () => {
 it('lists the four scenarios with run counts', async () => {
   mockFetch();
   render(<RecordingsPage />);
-  expect(await screen.findByText(/Watch real runs/)).toBeTruthy();
-  expect(screen.getAllByText('Open replay')).toHaveLength(4);
-  expect(screen.getAllByText(/runs? recorded/).length).toBeGreaterThanOrEqual(4);
+  expect(await screen.findByText(/Pick a replay/)).toBeTruthy();
+  expect(screen.getAllByText(/Watch replay/)).toHaveLength(4);
 });
 
 it('shows disclosure and steps through a recording', async () => {
@@ -59,4 +58,27 @@ it('rejects unknown scenarios', async () => {
   mockFetch();
   render(<RecordingsPage scenario="nope" />);
   expect(await screen.findByRole('alert')).toBeTruthy();
+});
+
+it('relabels validation-below-policy pending runs and lights nodes from events', async () => {
+  const c01 = load<Recording>('carrier-delay.C01.json');
+  expect(outcomeOf(c01).label).toBe('Pending: validation below policy');
+  expect(outcomeOf(load<Recording>('production-resequence.P01.json')).label).toBe('Pending: validation below policy');
+  expect(outcomeOf(load<Recording>('quality-hold.json')).label).toBe('Held for a person (pending)');
+  const q = load<Recording>('quality-hold.json');
+  const end = flowAt(q.timeline, q.timeline.length - 1);
+  expect(end.active).toBe('final');
+  expect(end.skipped.has('production' as never)).toBe(true);
+  expect(end.visited.has('coordinator')).toBe(true);
+  expect(flowAt(q.timeline, 0).active).toBe('request');
+});
+
+it('every recording opens', async () => {
+  mockFetch();
+  const ids: [string, string | undefined][] = [['quality-hold', undefined], ['carrier-delay', undefined], ['carrier-delay', 'C01'], ['production-resequence', undefined], ['production-resequence', 'P01'], ['order-pull-forward', undefined]];
+  for (const [s, r] of ids) {
+    const { unmount } = render(<RecordingsPage scenario={s} runId={r} />);
+    expect(await screen.findByRole('group', { name: 'Request flow' })).toBeTruthy();
+    unmount();
+  }
 });

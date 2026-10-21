@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  chipOf, kpis, outcomeOf, playbackDelayMs, routingOf, SCENARIO_TITLES, stepLabel, transcriptSections,
-  type IndexEntry, type Recording, type TimelineEvent,
+  attemptLabel, chipOf, FLOW_NODES, flowAt, kpis, outcomeOf, playbackDelayMs, routingOf, SCENARIO_TITLES, stepLabel, transcriptSections,
+  type FlowNode, type IndexEntry, type Recording, type TimelineEvent,
 } from '../recordings/model';
 
 const BASE = `${import.meta.env.BASE_URL}recordings/v2/`;
@@ -37,10 +37,9 @@ function Cards({ index }: { index: IndexEntry[] }) {
     <div className="learn-page rec-page">
       <header className="rec-hero">
         <p className="eyebrow">Recorded runs</p>
-        <h2>Watch real runs of the v2 expert team</h2>
-        <p className="learn-deck">Each card is a replay of an actual run: Decision-1 routing, specialist agents calling synthetic read-only tools, a coordinator, and a final host status. Nothing here calls a live service.</p>
+        <h2>Pick a replay</h2>
         <p className="rec-label"><span className="badge">Recorded live</span> <span className="badge">Synthetic data</span> <span className="badge">No live calls</span></p>
-        <p className="note">{NOT_RELIABILITY}</p>
+        <p className="note">Each replay was chosen after the fact from earlier attempts. {NOT_RELIABILITY}</p>
       </header>
       <div className="rec-cards">
         {index.map((e) => {
@@ -48,13 +47,12 @@ function Cards({ index }: { index: IndexEntry[] }) {
           const rec = recs[e.scenario];
           const out = rec ? outcomeOf(rec) : null;
           return (
-            <article key={e.scenario} className={`rec-card rec-${out?.kind ?? 'other'}`}>
+            <a key={e.scenario} className={`rec-card rec-${out?.kind ?? 'other'}`} href={`#recordings/${e.scenario}`}>
               <h3>{meta?.title ?? e.scenario}</h3>
               <p>{meta?.question}</p>
-              <p className="rec-meta">Shown run {e.selected} · {e.runs_recorded} run{e.runs_recorded === 1 ? '' : 's'} recorded{rec ? ` · captured ${rec.captured_utc_date}` : ''}</p>
               {out && <p><span className={`rec-chip rec-chip-${out.kind}`}>{out.label}</span></p>}
-              <a className="rec-open" href={`#recordings/${e.scenario}`}>Open replay</a>
-            </article>
+              <span className="rec-open">Watch replay →</span>
+            </a>
           );
         })}
       </div>
@@ -67,7 +65,7 @@ const TOUR = [
   { id: 'routing', title: 'Who picks the path', text: 'Decision-1 answers a routing question for each specialist. The host’s policy code, not the model, applies the routing and the final status.' },
   { id: 'player', title: 'Step through or watch', text: 'Use Back/Next to step, or Play for timed playback of the recorded timings. Skip long waits compresses idle gaps and says so.' },
   { id: 'steps', title: 'Selected step', text: 'The panel shows the exact recorded step you are on. Open the Audit trail tab for every event.' },
-  { id: 'disclosure', title: 'How this run was chosen', text: 'Every scenario discloses how many runs were recorded, that the shown one was selected, and links the others, including non-successes.' },
+  { id: 'disclosure', title: 'How this run was chosen', text: 'Each replay was selected after the fact; the Runs & disclosure tab explains the rule and links the other attempts, including non-successes.' },
 ];
 
 function Viewer({ entry, runId }: { entry: IndexEntry; runId?: string }) {
@@ -138,7 +136,7 @@ function Viewer({ entry, runId }: { entry: IndexEntry; runId?: string }) {
 
       <div className="rec-disclosure-banner" data-tour="disclosure">
         {isSelected
-          ? <>Showing <strong>{showId}</strong>, the run <strong>selected</strong> for display from {rec.disclosure.runs_recorded_for_scenario} recorded for this scenario.</>
+          ? <>This replay was <strong>selected</strong> after the fact; other attempts, where they exist, are listed under Runs &amp; disclosure.</>
           : <>Showing <strong>{showId}</strong>, a <strong>non-selected</strong> attempt. The selected run is <a href={`#recordings/${entry.scenario}`}>{rec.disclosure.selected}</a>.</>}
         {' '}<a href="#recordings" onClick={(e) => { e.preventDefault(); setTab('runs'); }}>See all attempts</a>. {NOT_RELIABILITY}
       </div>
@@ -150,7 +148,7 @@ function Viewer({ entry, runId }: { entry: IndexEntry; runId?: string }) {
       </div>
 
       {tab === 'overview' && (
-        <>
+        <div className="rec-overview">
           <section className={`rec-kpis${focus('kpis')}`} aria-label="Run summary">
             <Kpi label="Host outcome" value={out.label} tone={out.kind} />
             <Kpi label="Decision-1 calls" value={String(k.decision)} tone="d1" />
@@ -195,6 +193,7 @@ function Viewer({ entry, runId }: { entry: IndexEntry; runId?: string }) {
                 <label><input type="checkbox" checked={skipWaits} onChange={(e) => setSkipWaits(e.target.checked)} /> Skip long waits (compressed)</label>
               </div>
               <p className="rec-clock" aria-live="polite">Step {idx + 1} of {timeline.length} · recorded time {current.t_offset_s.toFixed(1)} s{skipWaits ? ' · long gaps compressed in playback' : ''}</p>
+              <Flow timeline={timeline} idx={idx} />
               <pre className="rec-terminal" ref={termRef} tabIndex={0} aria-label="Terminal transcript">{revealed.flatMap((s) => s.lines).join('\n')}</pre>
               <p className="rec-caption">The terminal is the exact sanitized transcript. The capture has no per-line timing, so each section appears when its matching recorded step completes.</p>
             </section>
@@ -214,11 +213,40 @@ function Viewer({ entry, runId }: { entry: IndexEntry; runId?: string }) {
               </ol>
             </aside>
           </div>
-        </>
+        </div>
       )}
 
       {tab === 'audit' && <Audit rec={rec} />}
       {tab === 'runs' && <Runs entry={entry} rec={rec} showId={showId} focus={focus('disclosure')} />}
+    </div>
+  );
+}
+
+function Flow({ timeline, idx }: { timeline: TimelineEvent[]; idx: number }) {
+  const st = flowAt(timeline, idx);
+  const cur = timeline[idx];
+  const caption = `Active: ${stepLabel(cur)}${st.waiting ? ' (local pacing wait)' : ''}`;
+  const cls = (id: FlowNode) => `rec-node${st.active === id ? ' active' : ''}${st.visited.has(id) ? ' visited' : ''}${st.skipped.has(id) ? ' skipped' : ''}`;
+  const specialists = FLOW_NODES.filter((n) => ['supply-chain', 'production', 'commercial'].includes(n.id));
+  const node = (n: (typeof FLOW_NODES)[number]) => (
+    <div key={n.id} className={cls(n.id)} data-node={n.id} aria-current={st.active === n.id ? 'step' : undefined}>
+      <strong>{n.label}</strong>
+      <small>{st.skipped.has(n.id) ? 'Skipped by host (not needed)' : n.sub}</small>
+      {st.active === n.id && st.tool && <span className="rec-node-tool">Tool: {st.tool}</span>}
+      {st.active === n.id && st.waiting && <span className="rec-node-wait">Waiting (local pacing)</span>}
+    </div>
+  );
+  const one = (id: FlowNode) => node(FLOW_NODES.find((n) => n.id === id)!);
+  return (
+    <div className="rec-flowviz" role="group" aria-label="Request flow">
+      <div className="rec-flowrow">
+        {one('request')}<span className="rec-arrow">→</span>{one('d1')}<span className="rec-arrow">→</span>{one('routing')}
+      </div>
+      <div className="rec-flowrow rec-specialists">{specialists.map(node)}</div>
+      <div className="rec-flowrow">
+        {one('coordinator')}<span className="rec-arrow">→</span>{one('validation')}<span className="rec-arrow">→</span>{one('final')}
+      </div>
+      <p className="rec-caption" aria-live="polite">{caption}. Nodes light up only when a matching event is in the recording; the order and outcomes are the recorded ones.</p>
     </div>
   );
 }
@@ -300,15 +328,15 @@ function Runs({ entry, rec, showId, focus }: { entry: IndexEntry; rec: Recording
   const d = rec.disclosure;
   return (
     <section className={`rec-runs${focus}`} aria-label="Runs and disclosure">
-      <h3>{d.runs_recorded_for_scenario} run{d.runs_recorded_for_scenario === 1 ? '' : 's'} recorded for this scenario</h3>
-      <p>The run shown by default (<strong>{d.selected}</strong>) was <strong>selected</strong> after the fact by an independent semantic review. Rule: {d.selection_rule}. Selection favors the displayed run, so this is not a representative sample.</p>
+      <h3>Selection and other attempts</h3>
+      <p>The replay shown by default (<strong>{d.selected}</strong>) was <strong>selected after the fact</strong> by an independent semantic review. Rule: {d.selection_rule}. Selection favors the displayed replay, so it is not a representative sample.</p>
       <ul className="rec-attempts">
         {d.all_attempts.map((a) => {
           const link = a.id === entry.selected ? `#recordings/${entry.scenario}` : `#recordings/${entry.scenario}/${a.id}`;
           return (
             <li key={a.id}>
               <a href={link} aria-current={a.id === showId ? 'true' : undefined}>{a.id}</a>{' '}
-              <span className={`rec-chip rec-chip-${a.host_status === 'advisory_complete' ? 'complete' : 'pending'}`}>{a.host_status === 'advisory_complete' ? 'Advisory complete' : 'Held for a person (pending)'}</span>{' '}
+              <span className={`rec-chip rec-chip-${a.host_status === 'advisory_complete' ? 'complete' : 'pending'}`}>{attemptLabel(a)}</span>{' '}
               {a.id === d.selected && <span className="badge">Selected</span>} <span className="note">Review: {a.review_note}</span>
             </li>
           );
