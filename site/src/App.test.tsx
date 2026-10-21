@@ -1,6 +1,10 @@
 import { act, render, screen, within } from '@testing-library/react';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import App from './App';
+
+beforeEach(() => {
+  vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+});
 
 afterEach(() => {
   window.history.replaceState(null, '', '/');
@@ -31,12 +35,11 @@ it.each(['/', '/#intro', '/workspace/?lesson=start'])('opens Home for %s without
   expect(screen.getByRole('heading', { level: 1, name: 'Decision Models' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Decision Models' })).toHaveAttribute('href', '#intro');
   expect(screen.getByRole('heading', { name: 'Explore how decision models work' })).toBeInTheDocument();
-  expect(screen.getByText(/One recorded case with synthetic facts/)).toBeInTheDocument();
   expect(screen.queryByText(/Synthetic evidence only\. No external actions executed\./)).not.toBeInTheDocument();
-  expect(nav().getAllByRole('link').map((link) => link.textContent)).toEqual(['Home', 'Learn']);
+  expect(nav().getAllByRole('link').map((link) => link.textContent)).toEqual(['Home', 'Learn', 'Demo showcase']);
   expect(nav().getByRole('link', { name: 'Home' })).toHaveAttribute('aria-current', 'page');
   expect(nav().getByRole('link', { name: 'Learn' })).not.toHaveAttribute('aria-current');
-  expect(screen.getByRole('link', { name: 'Follow the recorded shortage' })).toHaveAttribute('href', '#learn');
+  expect(screen.getByRole('link', { name: 'Dive into how it works' })).toHaveAttribute('href', '#learn');
   expect(document.querySelector('a[href="#run"], a[href="#compare"]')).toBeNull();
   expect(fetchMock).not.toHaveBeenCalled();
 });
@@ -79,10 +82,31 @@ it.each(['#run', '#compare', '#unexpected'])('resolves removed or unknown %s to 
   render(<App />);
   expect(window.location.hash).toBe('#learn');
   expect(screen.getByRole('heading', { name: 'Follow the recorded shortage' })).toBeInTheDocument();
-  expect(nav().getAllByRole('link').map((l) => l.textContent)).toEqual(['Home', 'Learn']);
+  expect(nav().getAllByRole('link').map((l) => l.textContent)).toEqual(['Home', 'Learn', 'Demo showcase']);
   expect(screen.queryByRole('button', { name: /start|live|replay/i })).not.toBeInTheDocument();
   expect(screen.queryByRole('heading', { name: /API connectivity/ })).not.toBeInTheDocument();
   navigate('#compare');
   expect(window.location.hash).toBe('#learn');
   expect(fetchMock).not.toHaveBeenCalled();
+});
+it('switches between demo-showcase routes and keeps legacy #recordings links working on hash change without falling back to Learn', async () => {
+  window.history.replaceState(null, '', '/#recordings');
+  const fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => [] }));
+  vi.stubGlobal('fetch', fetchMock);
+  render(<App />);
+  expect(await screen.findByRole('alert')).toBeTruthy();
+  navigate('#recordings/nope');
+  expect(await screen.findByRole('alert')).toBeTruthy();
+  expect(window.location.hash).toBe('#showcase/nope');
+});
+
+it('scrolls to the top when the route changes', () => {
+  setup();
+  const scroll = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+  render(<App />);
+  navigate('#learn');
+  expect(scroll).toHaveBeenCalledWith(0, 0);
+  scroll.mockClear();
+  navigate('#intro');
+  expect(scroll).toHaveBeenCalledWith(0, 0);
 });

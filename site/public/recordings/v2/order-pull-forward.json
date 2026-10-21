@@ -1,0 +1,689 @@
+{
+ "schema_version": "1.0-candidate",
+ "mode": "recorded_live",
+ "transport": "apim",
+ "data": "synthetic",
+ "recording_alias": "order-pull-forward-O01",
+ "scenario": "order-pull-forward",
+ "source_commit": "a7860e7",
+ "model_profile": "gpt-6-luna",
+ "captured_utc_date": "2026-10-20",
+ "disclosure": {
+  "runs_recorded_for_scenario": 1,
+  "selected": "O01",
+  "selection_rule": "independent semantic review; clean advisory_complete preferred; earliest ordinal ties",
+  "all_attempts": [
+   {
+    "id": "O01",
+    "host_status": "advisory_complete",
+    "review_note": "clean"
+   }
+  ],
+  "caveat": "Small sample; observed behavior, not reliability or readiness."
+ },
+ "display_transcript": [
+  "LIVE Azure Foundry inference | SYNTHETIC fixture tools | proposals only",
+  "GPT deployment=<redacted>; profile=gpt-6-luna; local pacing=10 RPM/10,000 estimated TPM; output allowance=2,400 tokens.",
+  "At most one clarification; hard maximum 20 GPT +4 Decision-1 attempts, not expected runtime.",
+  "",
+  "=== CASE ===",
+  "SYNTHETIC Customer-requested order pull-forward | snapshot Thu 15 Oct 2026 14:00 UTC-05:00",
+  "Fictional Tier-1 customer | order SO-6701",
+  "Customer planning record CR-6701 asks to compare full 400 units Friday 09:00-10:00 with a",
+  "split 160 in that window and 240 Friday 14:00-16:00. Customer prefers full early supply to",
+  "avoid a second lineside receipt but explicitly permits either option for planning; no option",
+  "or dispatch has been accepted. Full early requires an $1800 approved overnight service; split",
+  "uses two standing routes at zero incremental charge. 160 finished plus 240 new units are",
+  "needed. C4's setup/run must finish before the 17:00-19:00 reservation for SO-6702 (200 units,",
+  "Friday 14:00 delivery); its materials and capacity cannot be borrowed. Compare delivery",
+  "benefit, capacity margin and cost.",
+  "Expected specialist route: 3 (capacity, freight and customer tradeoffs). Live decisions may",
+  "differ; no forced routing.",
+  "Demand 400; unallocated released finished units 160; planned production 240.",
+  "Released materials 600 minus other-order reservations 200 = 400 available.",
+  "Unselected option full-early: 150 cell minutes; ready Thu 15 Oct 2026 18:00 UTC-05:00; freight",
+  "$1,800 / $2,500 authority.",
+  "  400 units arrive Fri 16 Oct 2026 09:30 UTC-05:00.",
+  "Unselected option split-standard: 150 cell minutes; ready Thu 15 Oct 2026 18:00 UTC-05:00;",
+  "freight $0 / $2,500 authority.",
+  "  160 units arrive Fri 16 Oct 2026 09:30 UTC-05:00.",
+  "  240 units arrive Fri 16 Oct 2026 14:00 UTC-05:00.",
+  "Synthetic read-only planning records; no real shipment, production or customer writes.",
+  "",
+  "=== ASSESSMENT NEED ===",
+  "Decision-1 overall assessment need: assessment needed | chosen-option probability 99.6% |",
+  "model-reported confidence 99%.",
+  "Next: select contributing specialists.",
+  "",
+  "=== TEAM ===",
+  "Supply-Chain: model choice needed | chosen-option probability 98.3% | model-reported",
+  "confidence 97%.",
+  "  Routing outcome: consult specialist.",
+  "Production: model choice not needed | chosen-option probability 58.8% | model-reported",
+  "confidence 38%.",
+  "  Routing outcome: conservative consultation (uncertain role score).",
+  "  Model choice did not meet the 70%/uniquely-highest policy; host consults conservatively.",
+  "  Reported confidence is separate.",
+  "Commercial: model choice needed | chosen-option probability 99.3% | model-reported confidence",
+  "99%.",
+  "  Routing outcome: consult specialist.",
+  "Actual specialist route: 3 | supply-chain, production, commercial",
+  "Quota pacing: estimated GPT tokens, wait 58.1s (no service retry)",
+  "",
+  "=== FINDINGS ===",
+  "Supply-Chain (assessment 1)",
+  "  Evidence: Inventory records show 160 released finished units and 600 released material",
+  "  units, of which 200 are reserved for other orders. Thus 400 released material units remain",
+  "  unreserved, sufficient for the 240 new units needed; the 200-unit reservation is preserved.",
+  "  No held stock is used. Shipment evidence confirms qualified carriers and slots for both",
+  "  options. Neither option nor dispatch is accepted.",
+  "  Implication: Full-early delivers all 400 together in the Friday 09:00\u201310:00 window, avoiding",
+  "  a second receipt, for $1,800 incremental freight. Split-standard delivers 160 in the early",
+  "  window and 240 in the Friday 14:00\u201316:00 window for $0 incremental freight, but requires two",
+  "  receipts. Shipment-derived arrival estimates are Friday 2026-10-16 09:30 UTC-05:00 for the",
+  "  early legs and Friday 2026-10-16 14:00 UTC-05:00 for the later split leg. Full-early's",
+  "  booking cutoff is Thursday 2026-10-15 16:30 UTC-05:00; split's early-leg cutoff is Thursday",
+  "  2026-10-15 16:00 UTC-05:00 and later-leg cutoff is Friday 2026-10-16 09:00 UTC-05:00. C4",
+  "  capacity and its margin against the SO-6702 reservation are not assessed here; Production",
+  "  owns that assessment. The supplied issue states the $2,500 planning limit, but it does not",
+  "  authorize execution. No option is preferred.",
+  "  Sources: synthetic case, released stock and reserved materials, carrier slot and customer",
+  "  window",
+  "  Option assessment full-early: 400 units in one confirmed shipment on the approved",
+  "  alternative overnight carrier; slot confirmed and commitment reference recorded. Pickup is",
+  "  Thursday 2026-10-15 18:30 UTC-05:00, with 900 minutes transit and derived arrival Friday",
+  "  2026-10-16 09:30 UTC-05:00, within the requested Friday 09:00\u201310:00 window. Booking cutoff",
+  "  is Thursday 2026-10-15 16:30 UTC-05:00. Incremental freight is $1,800; expedited service is",
+  "  used and an alternative carrier is used. Requires 240 new units beyond the 160 released",
+  "  finished units. Does not use held stock.",
+  "    Model claims: freight_total_usd=1800.0; uses_alternative_carrier=True;",
+  "    uses_expedited_freight=True",
+  "    Sources: synthetic case, released stock and reserved materials, carrier slot and customer",
+  "    window",
+  "  Option assessment split-standard: Two confirmed shipments on the approved standard",
+  "  contracted carrier. The 160-unit leg has pickup Friday 2026-10-16 05:30 UTC-05:00, 240",
+  "  minutes transit and derived arrival Friday 2026-10-16 09:30 UTC-05:00, within the requested",
+  "  09:00\u201310:00 window; cutoff is Thursday 2026-10-15 16:00 UTC-05:00. The 240-unit leg has",
+  "  pickup Friday 2026-10-16 10:00 UTC-05:00, 240 minutes transit and derived arrival Friday",
+  "  2026-10-16 14:00 UTC-05:00, within the requested 14:00\u201316:00 window; cutoff is Friday",
+  "  2026-10-16 09:00 UTC-05:00. Incremental freight is $0. No expedited service or alternative",
+  "  carrier is used. Requires 240 new units beyond the 160 released finished units. Does not use",
+  "  held stock.",
+  "    Model claims: freight_total_usd=0.0; uses_alternative_carrier=False;",
+  "    uses_expedited_freight=False",
+  "    Sources: synthetic case, released stock and reserved materials, carrier slot and customer",
+  "    window",
+  "Quota pacing: estimated GPT tokens, wait 47.0s (no service retry)",
+  "Quota pacing: estimated GPT tokens, wait 57.9s (no service retry)",
+  "Production (assessment 1)",
+  "  Evidence: Both options use qualified cell C4 and require 150 cell minutes for the 240-unit",
+  "  build. Staffed availability is 180 minutes, leaving 30 minutes of total headroom. Cell",
+  "  occupancy ends exactly when SO-6702's protected reservation starts, so there is no gap and",
+  "  no reservation displacement. Packing takes a separate 60 minutes and completes after the",
+  "  cell reservation begins.",
+  "  Implication: Production capacity supports either planning option without overtime or",
+  "  borrowing SO-6702's reserved capacity or materials. Factory readiness is not customer",
+  "  delivery: the build record gives delivery due times, not shipment arrivals or confirmed",
+  "  delivery windows. Supply-chain should assess delivery timing and routes; no option or",
+  "  dispatch is authorized here.",
+  "  Sources: synthetic case, released stock and reserved materials, qualified capacity and",
+  "  committed orders",
+  "  Option assessment full-early: Qualified C4; 150 required cell minutes against 180 available",
+  "  (30 minutes total staffed headroom). Cell occupancy ends Thursday 2026-10-15 17:00",
+  "  UTC-05:00, coincident with the protected SO-6702 reservation start (zero gap); packing",
+  "  follows separately for 60 minutes, with factory readiness Thursday 2026-10-15 18:00",
+  "  UTC-05:00. Fits staffed time, needs no overtime, and displaces no other order. The issue",
+  "  describes an $1,800 overnight service charge for this option; delivery benefit and arrival",
+  "  timing require Supply-chain assessment.",
+  "    Model claims: required_cell_minutes=150; available_cell_minutes=180; packing_minutes=60;",
+  "    ready_at=2026-10-15T18:00:00-05:00; uses_alternative_cell=False; requires_overtime=False;",
+  "    displaces_other_orders=False",
+  "    Sources: synthetic case, qualified capacity and committed orders, released stock and",
+  "    reserved materials",
+  "  Option assessment split-standard: Qualified C4; 150 required cell minutes against 180",
+  "  available (30 minutes total staffed headroom). Cell occupancy ends Thursday 2026-10-15 17:00",
+  "  UTC-05:00, coincident with the protected SO-6702 reservation start (zero gap); packing",
+  "  follows separately for 60 minutes, with factory readiness Thursday 2026-10-15 18:00",
+  "  UTC-05:00. Fits staffed time, needs no overtime, and displaces no other order. The issue",
+  "  describes two standing routes with zero incremental charge; delivery benefit and arrival",
+  "  timing require Supply-chain assessment.",
+  "    Model claims: required_cell_minutes=150; available_cell_minutes=180; packing_minutes=60;",
+  "    ready_at=2026-10-15T18:00:00-05:00; uses_alternative_cell=False; requires_overtime=False;",
+  "    displaces_other_orders=False",
+  "    Sources: synthetic case, qualified capacity and committed orders, released stock and",
+  "    reserved materials",
+  "Quota pacing: estimated GPT tokens, wait 44.7s (no service retry)",
+  "Quota pacing: estimated GPT tokens, wait 58.2s (no service retry)",
+  "Commercial (assessment 1)",
+  "  Evidence: CR-6701 documents a preference for full early supply to avoid a second lineside",
+  "  receipt, while permitting both options for planning; neither option is accepted or",
+  "  dispatched. Full-early costs $1,800 incremental freight; split-standard costs $0. The",
+  "  preference benefit is documented but unpriced. Both options\u2019 freight is within the $2,500",
+  "  planning limit, which does not authorize execution. Shipment-derived arrivals are Friday",
+  "  2026-10-16 09:30 UTC-05:00 for the 400-unit full delivery, and Friday 2026-10-16 09:30",
+  "  UTC-05:00 plus Friday 2026-10-16 14:00 UTC-05:00 for the split. Both match documented",
+  "  planning permission and stated delivery windows. Shipment/policy evidence provides no",
+  "  manufacturing feasibility or capacity-margin assessment; Production should assess",
+  "  feasibility while preserving SO-6702\u2019s reservation and materials. No quality incident is",
+  "  documented. Planning permission is not executed acceptance; responsible owners retain",
+  "  customer contact, approvals and execution.",
+  "  Implication: Commercially, full-early avoids a second receipt at $1,800 incremental freight;",
+  "  split-standard avoids incremental freight but entails two receipts. Do not treat either",
+  "  planning option as accepted or executed. Manufacturing feasibility and capacity margin",
+  "  remain for Production.",
+  "  Sources: synthetic case, carrier slot and customer window, existing authority and planning",
+  "  request",
+  "  Option assessment full-early: 400 units arrive in the documented Friday 2026-10-16 09:00",
+  "  UTC-05:00\u2013Friday 2026-10-16 10:00 UTC-05:00 window; derived arrival Friday 2026-10-16 09:30",
+  "  UTC-05:00. Matches documented customer planning permission. $1,800 incremental freight,",
+  "  within existing $2,500 planning authority; authority is not execution approval. Fulfills the",
+  "  customer\u2019s stated preference to avoid a second lineside receipt. Production",
+  "  feasibility/capacity margin is not assessed by these records.",
+  "    Model claims: pulls_order_forward=True; changes_customer_commitment=False",
+  "    Sources: synthetic case, carrier slot and customer window, existing authority and planning",
+  "    request",
+  "  Option assessment split-standard: 160 units arrive in the documented Friday 2026-10-16 09:00",
+  "  UTC-05:00\u2013Friday 2026-10-16 10:00 UTC-05:00 window; 240 arrive in the Friday 2026-10-16",
+  "  14:00 UTC-05:00\u2013Friday 2026-10-16 16:00 UTC-05:00 window. Derived arrivals: Friday",
+  "  2026-10-16 09:30 UTC-05:00 and Friday 2026-10-16 14:00 UTC-05:00. Matches documented",
+  "  customer planning permission. $0 incremental freight; entails a second receipt, contrary to",
+  "  the stated preference. Production feasibility/capacity margin is not assessed by these",
+  "  records.",
+  "    Model claims: pulls_order_forward=True; changes_customer_commitment=False",
+  "    Sources: synthetic case, carrier slot and customer window, existing authority and planning",
+  "    request",
+  "Quota pacing: estimated GPT tokens, wait 47.8s (no service retry)",
+  "",
+  "=== INITIAL PLAN ===",
+  "Initial coordinator proposal: Recommend split-standard for planning: it covers the 400-unit",
+  "order with 160 released finished units plus a 240-unit new build, arriving as 160 at Friday",
+  "09:30 and 240 at Friday 14:00 UTC-05:00, within the documented windows, at $0 incremental",
+  "freight. Full-early delivers all 400 together at Friday 09:30 UTC-05:00 and honors the",
+  "customer's stated preference to avoid a second receipt, but costs $1,800 incremental freight.",
+  "The preference benefit is documented but unpriced, so choosing split prioritizes the evidenced",
+  "cost saving; both options use qualified C4, require 150 of 180 available cell minutes (30",
+  "minutes headroom), need no overtime, and preserve SO-6702's protected capacity and materials.",
+  "The 240-unit build is distinct from total 400-unit order coverage. Materials suffice: 400",
+  "unreserved units are available for the build. Neither option is accepted or dispatched; the",
+  "$2,500 planning limit is not execution authority. Responsible owners retain approval, customer",
+  "contact, and execution.",
+  "Next step: plan against the documented earlier customer request",
+  "Selected planning option: split-standard (model recommendation, not execution).",
+  "Decision-1 proposal validation (not execution): Addresses the issue | chosen-option",
+  "probability 80.2% | model-reported confidence 70%.",
+  "",
+  "=== UPDATED HANDOFF ===",
+  "Final advisory status: advisory complete. No stock released, notification sent, customer",
+  "commitment made or spending authorized.",
+  "Plan ready for responsible-owner execution review; model validation is not execution or safety",
+  "certification.",
+  "Actual shipment, production and customer actions remain with responsible owners.",
+  "Actual model attempts: GPT 7/20; Decision-1 3/4; fixture tools 6/12."
+ ],
+ "timeline": [
+  {
+   "seq": 1,
+   "t_offset_s": 0.078,
+   "kind": "run_start",
+   "scenario": "order-pull-forward-v2",
+   "llm_profile": "gpt-6-luna",
+   "gpt_deadline_s": 120
+  },
+  {
+   "seq": 2,
+   "t_offset_s": 1.219,
+   "kind": "model_call_start",
+   "actor": "assessment",
+   "revision": 0,
+   "attempt": 1,
+   "deadline_s": 60,
+   "call_kind": "decision"
+  },
+  {
+   "seq": 3,
+   "t_offset_s": 1.672,
+   "kind": "model_call_end",
+   "actor": "assessment",
+   "attempt": 1,
+   "http_status": 200,
+   "usage": {
+    "input_tokens": 3645,
+    "output_tokens": 1
+   },
+   "elapsed_ms": 453.0,
+   "call_kind": "decision"
+  },
+  {
+   "seq": 4,
+   "t_offset_s": 1.672,
+   "kind": "decision_result",
+   "actor": "assessment",
+   "revision": 0,
+   "answers": {
+    "assessment_needed": {
+     "choice": "assessment_needed",
+     "confidence": 0.9932617839539772,
+     "probabilities": {
+      "assessment_needed": 0.9955078559693181,
+      "cannot_determine": 0.001695967061681226,
+      "no_further_assessment": 0.0027961769690006332
+     }
+    }
+   }
+  },
+  {
+   "seq": 5,
+   "t_offset_s": 2.734,
+   "kind": "model_call_start",
+   "actor": "selection",
+   "revision": 0,
+   "attempt": 1,
+   "deadline_s": 60,
+   "call_kind": "decision"
+  },
+  {
+   "seq": 6,
+   "t_offset_s": 3.094,
+   "kind": "model_call_end",
+   "actor": "selection",
+   "attempt": 1,
+   "http_status": 200,
+   "usage": {
+    "input_tokens": 4260,
+    "output_tokens": 3
+   },
+   "elapsed_ms": 360.0,
+   "call_kind": "decision"
+  },
+  {
+   "seq": 7,
+   "t_offset_s": 3.094,
+   "kind": "decision_result",
+   "actor": "selection",
+   "revision": 0,
+   "answers": {
+    "commercial_needed": {
+     "choice": "needed",
+     "confidence": 0.9894107782688635,
+     "probabilities": {
+      "cannot_determine": 0.0024612537623554843,
+      "needed": 0.9929405188459091,
+      "not_needed": 0.004598227391735481
+     }
+    },
+    "production_needed": {
+     "choice": "not_needed",
+     "confidence": 0.3824165696232702,
+     "probabilities": {
+      "cannot_determine": 0.007405321764765757,
+      "needed": 0.40431696515305404,
+      "not_needed": 0.5882777130821801
+     }
+    },
+    "supply_chain_needed": {
+     "choice": "needed",
+     "confidence": 0.9742782490623323,
+     "probabilities": {
+      "cannot_determine": 0.0031282025920137684,
+      "needed": 0.9828521660415549,
+      "not_needed": 0.01401963136643131
+     }
+    }
+   }
+  },
+  {
+   "seq": 8,
+   "t_offset_s": 3.094,
+   "kind": "routing",
+   "detail": {
+    "active": [
+     "supply-chain",
+     "production",
+     "commercial"
+    ],
+    "uncertain": [
+     "production"
+    ],
+    "effective": {
+     "supply-chain": "needed",
+     "production": "cannot_determine",
+     "commercial": "needed"
+    }
+   }
+  },
+  {
+   "seq": 9,
+   "t_offset_s": 4.312,
+   "kind": "model_call_start",
+   "actor": "supply-chain",
+   "revision": 0,
+   "attempt": 1,
+   "deadline_s": 120,
+   "call_kind": "gpt"
+  },
+  {
+   "seq": 10,
+   "t_offset_s": 5.984,
+   "kind": "model_call_end",
+   "actor": "supply-chain",
+   "attempt": 1,
+   "http_status": 200,
+   "usage": {
+    "input_tokens": 1372,
+    "output_tokens": 61,
+    "total_tokens": 1433
+   },
+   "elapsed_ms": 1672.0,
+   "call_kind": "gpt"
+  },
+  {
+   "seq": 11,
+   "t_offset_s": 6.172,
+   "kind": "tool_call",
+   "actor": "supply-chain",
+   "tool": "read_inventory",
+   "evidence_id": "fixture:inventory:order-pull-forward-v2",
+   "result_chars": 423
+  },
+  {
+   "seq": 12,
+   "t_offset_s": 6.172,
+   "kind": "tool_call",
+   "actor": "supply-chain",
+   "tool": "read_shipment",
+   "evidence_id": "fixture:shipment:order-pull-forward-v2",
+   "result_chars": 2125
+  },
+  {
+   "seq": 13,
+   "t_offset_s": 6.203,
+   "kind": "pacing_wait",
+   "wait_kind": "gpt-tokens",
+   "seconds": 58.1
+  },
+  {
+   "seq": 14,
+   "t_offset_s": 64.328,
+   "kind": "model_call_start",
+   "actor": "supply-chain",
+   "revision": 0,
+   "attempt": 1,
+   "deadline_s": 120,
+   "call_kind": "gpt"
+  },
+  {
+   "seq": 15,
+   "t_offset_s": 77.266,
+   "kind": "model_call_end",
+   "actor": "supply-chain",
+   "attempt": 1,
+   "http_status": 200,
+   "usage": {
+    "input_tokens": 3357,
+    "output_tokens": 1170,
+    "total_tokens": 4527
+   },
+   "elapsed_ms": 12938.0,
+   "call_kind": "gpt"
+  },
+  {
+   "seq": 16,
+   "t_offset_s": 77.297,
+   "kind": "pacing_wait",
+   "wait_kind": "gpt-tokens",
+   "seconds": 47.0
+  },
+  {
+   "seq": 17,
+   "t_offset_s": 124.344,
+   "kind": "model_call_start",
+   "actor": "production",
+   "revision": 0,
+   "attempt": 1,
+   "deadline_s": 120,
+   "call_kind": "gpt"
+  },
+  {
+   "seq": 18,
+   "t_offset_s": 126.422,
+   "kind": "model_call_end",
+   "actor": "production",
+   "attempt": 1,
+   "http_status": 200,
+   "usage": {
+    "input_tokens": 1545,
+    "output_tokens": 60,
+    "total_tokens": 1605
+   },
+   "elapsed_ms": 2078.0,
+   "call_kind": "gpt"
+  },
+  {
+   "seq": 19,
+   "t_offset_s": 126.422,
+   "kind": "tool_call",
+   "actor": "production",
+   "tool": "read_inventory",
+   "evidence_id": "fixture:inventory:order-pull-forward-v2",
+   "result_chars": 423
+  },
+  {
+   "seq": 20,
+   "t_offset_s": 126.422,
+   "kind": "tool_call",
+   "actor": "production",
+   "tool": "read_build",
+   "evidence_id": "fixture:build:order-pull-forward-v2",
+   "result_chars": 2548
+  },
+  {
+   "seq": 21,
+   "t_offset_s": 126.437,
+   "kind": "pacing_wait",
+   "wait_kind": "gpt-tokens",
+   "seconds": 57.9
+  },
+  {
+   "seq": 22,
+   "t_offset_s": 184.344,
+   "kind": "model_call_start",
+   "actor": "production",
+   "revision": 0,
+   "attempt": 1,
+   "deadline_s": 120,
+   "call_kind": "gpt"
+  },
+  {
+   "seq": 23,
+   "t_offset_s": 199.656,
+   "kind": "model_call_end",
+   "actor": "production",
+   "attempt": 1,
+   "http_status": 200,
+   "usage": {
+    "input_tokens": 4070,
+    "output_tokens": 955,
+    "total_tokens": 5025
+   },
+   "elapsed_ms": 15312.0,
+   "call_kind": "gpt"
+  },
+  {
+   "seq": 24,
+   "t_offset_s": 199.672,
+   "kind": "pacing_wait",
+   "wait_kind": "gpt-tokens",
+   "seconds": 44.7
+  },
+  {
+   "seq": 25,
+   "t_offset_s": 244.359,
+   "kind": "model_call_start",
+   "actor": "commercial",
+   "revision": 0,
+   "attempt": 1,
+   "deadline_s": 120,
+   "call_kind": "gpt"
+  },
+  {
+   "seq": 26,
+   "t_offset_s": 246.094,
+   "kind": "model_call_end",
+   "actor": "commercial",
+   "attempt": 1,
+   "http_status": 200,
+   "usage": {
+    "input_tokens": 1342,
+    "output_tokens": 63,
+    "total_tokens": 1405
+   },
+   "elapsed_ms": 1735.0,
+   "call_kind": "gpt"
+  },
+  {
+   "seq": 27,
+   "t_offset_s": 246.094,
+   "kind": "tool_call",
+   "actor": "commercial",
+   "tool": "read_shipment",
+   "evidence_id": "fixture:shipment:order-pull-forward-v2",
+   "result_chars": 2125
+  },
+  {
+   "seq": 28,
+   "t_offset_s": 246.094,
+   "kind": "tool_call",
+   "actor": "commercial",
+   "tool": "read_approval_policy",
+   "evidence_id": "fixture:policy:order-pull-forward-v2",
+   "result_chars": 1094
+  },
+  {
+   "seq": 29,
+   "t_offset_s": 246.109,
+   "kind": "pacing_wait",
+   "wait_kind": "gpt-tokens",
+   "seconds": 58.2
+  },
+  {
+   "seq": 30,
+   "t_offset_s": 304.359,
+   "kind": "model_call_start",
+   "actor": "commercial",
+   "revision": 0,
+   "attempt": 1,
+   "deadline_s": 120,
+   "call_kind": "gpt"
+  },
+  {
+   "seq": 31,
+   "t_offset_s": 316.547,
+   "kind": "model_call_end",
+   "actor": "commercial",
+   "attempt": 1,
+   "http_status": 200,
+   "usage": {
+    "input_tokens": 3762,
+    "output_tokens": 845,
+    "total_tokens": 4607
+   },
+   "elapsed_ms": 12188.0,
+   "call_kind": "gpt"
+  },
+  {
+   "seq": 32,
+   "t_offset_s": 316.562,
+   "kind": "pacing_wait",
+   "wait_kind": "gpt-tokens",
+   "seconds": 47.8
+  },
+  {
+   "seq": 33,
+   "t_offset_s": 364.359,
+   "kind": "model_call_start",
+   "actor": "coordinator",
+   "revision": 0,
+   "attempt": 1,
+   "deadline_s": 120,
+   "call_kind": "gpt"
+  },
+  {
+   "seq": 34,
+   "t_offset_s": 373.219,
+   "kind": "model_call_end",
+   "actor": "coordinator",
+   "attempt": 1,
+   "http_status": 200,
+   "usage": {
+    "input_tokens": 9115,
+    "output_tokens": 593,
+    "total_tokens": 9708
+   },
+   "elapsed_ms": 8860.0,
+   "call_kind": "gpt"
+  },
+  {
+   "seq": 35,
+   "t_offset_s": 375.484,
+   "kind": "model_call_start",
+   "actor": "validation",
+   "revision": 0,
+   "attempt": 1,
+   "deadline_s": 60,
+   "call_kind": "decision"
+  },
+  {
+   "seq": 36,
+   "t_offset_s": 375.812,
+   "kind": "model_call_end",
+   "actor": "validation",
+   "attempt": 1,
+   "http_status": 200,
+   "usage": {
+    "input_tokens": 6026,
+    "output_tokens": 1
+   },
+   "elapsed_ms": 328.0,
+   "call_kind": "decision"
+  },
+  {
+   "seq": 37,
+   "t_offset_s": 375.812,
+   "kind": "decision_result",
+   "actor": "validation",
+   "revision": 0,
+   "answers": {
+    "validation": {
+     "choice": "Addresses the issue",
+     "confidence": 0.703226663939577,
+     "probabilities": {
+      "Addresses the issue": 0.8021511092930513,
+      "Cannot determine": 0.018864787894220383,
+      "Needs revision": 0.17898410281272822
+     }
+    }
+   }
+  },
+  {
+   "seq": 38,
+   "t_offset_s": 375.812,
+   "kind": "final",
+   "status": "advisory_complete",
+   "code": 0,
+   "warnings": 0,
+   "gpt_attempts": 7,
+   "decision_attempts": 3,
+   "transport_retries": 0
+  }
+ ],
+ "integrity": {
+  "transcript_sha256": "4440070de29c0fdf58da4a0be1bbe03cab44146cec7745d411e746ab2e34b03b",
+  "private_fields_omitted": [
+   "APIM run id",
+   "message bodies",
+   "identity",
+   "endpoints"
+  ],
+  "usage_note": "usage per request as returned; null when absent"
+ }
+}

@@ -127,7 +127,7 @@ export function LearnPage() {
         <div>
           <h2>Follow the recorded shortage</h2>
           <p className="learn-deck">Tomorrow needs 480 assemblies; parts for 310 are on hand. Can the team cover the gap without bypassing approval?</p>
-          <p className="recorded-provenance">Recorded model calls · synthetic facts · pending human review. Explore five stages at your own pace.</p>
+          <p className="recorded-provenance">Recorded model calls · synthetic facts · pending human review. An in-depth look at how a decision model fits into the process, in five stages at your own pace.</p>
         </div>
       </header>
 

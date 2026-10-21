@@ -1,0 +1,537 @@
+{
+ "schema_version": "1.0-candidate",
+ "mode": "recorded_live",
+ "transport": "apim",
+ "data": "synthetic",
+ "recording_alias": "quality-hold-Q01",
+ "scenario": "quality-hold",
+ "source_commit": "a7860e7",
+ "model_profile": "gpt-6-luna",
+ "captured_utc_date": "2026-10-20",
+ "disclosure": {
+  "runs_recorded_for_scenario": 1,
+  "selected": "Q01",
+  "selection_rule": "independent semantic review; clean advisory_complete preferred; earliest ordinal ties",
+  "all_attempts": [
+   {
+    "id": "Q01",
+    "host_status": "pending",
+    "review_note": "correct containment/approval handoff (human-input deadline expired, non-interactive)"
+   }
+  ],
+  "caveat": "Small sample; observed behavior, not reliability or readiness."
+ },
+ "display_transcript": [
+  "LIVE Azure Foundry inference | SYNTHETIC fixture tools | proposals only",
+  "GPT deployment=<redacted>; profile=gpt-6-luna; local pacing=10 RPM/10,000 estimated TPM; output allowance=2,400 tokens.",
+  "At most one clarification; hard maximum 20 GPT +4 Decision-1 attempts, not expected runtime.",
+  "",
+  "=== CASE ===",
+  "SYNTHETIC planning case | snapshot Thu 15 Oct 2026 14:00 UTC-05:00",
+  "Fictional Tier-1 customer | order SO-4821",
+  "Incident QI-2026-1042, MB-217 stamped mounting bracket, lot L-1042: 960 total = 720",
+  "Quality-held onsite + 240 already shipped (SH-882, ASN-019443).",
+  "Measured sample: 6 failures in 80 checked. Total nonconforming quantity is unknown; do not",
+  "extrapolate the sample.",
+  "Usable stock: 180 from independently released lot L-1038. Held stock is excluded; this demo",
+  "cannot lift the hold.",
+  "Scheduled delivery: 180 units at Fri 16 Oct 2026 10:00 UTC-05:00.",
+  "Scheduled delivery: 240 units at Fri 16 Oct 2026 16:00 UTC-05:00.",
+  "420 scheduled / 180 usable: first delivery covered by 180; original second-window shortfall",
+  "240.",
+  "Separate-lot offer: 300 from L-1058; collection possible, arrival and incoming acceptance",
+  "unconfirmed.",
+  "Dedicated quote $3,600; planner limit $2,500. No approved concession. Notification and",
+  "customer disposition remain pending.",
+  "Model results are advisory. Synthetic evidence is not a live ERP/QA/customer record.",
+  "",
+  "=== ASSESSMENT NEED ===",
+  "Decision-1 overall assessment need: assessment needed | chosen-option probability 99.6% |",
+  "model-reported confidence 99%.",
+  "Missing canonical evidence: customer flexibility for the second delivery unknown; customer",
+  "disposition of shipped suspect stock unknown; replacement incoming acceptance pending;",
+  "replacement arrival unconfirmed",
+  "Quality containment and responsible customer notification remain required.",
+  "Next: select contributing specialists.",
+  "",
+  "=== TEAM ===",
+  "Supply-Chain: model choice needed | chosen-option probability 98.8% | model-reported",
+  "confidence 98%.",
+  "  Routing outcome: consult specialist.",
+  "Production: model choice not needed | chosen-option probability 71.5% | model-reported",
+  "confidence 57%.",
+  "  Routing outcome: skip specialist.",
+  "Commercial: model choice needed | chosen-option probability 98.7% | model-reported confidence",
+  "98%.",
+  "  Routing outcome: consult specialist.",
+  "Actual specialist route: 2 | supply-chain, commercial",
+  "Quota pacing: estimated GPT tokens, wait 58.3s (no service retry)",
+  "",
+  "=== FINDINGS ===",
+  "Supply-Chain (assessment 1)",
+  "  Evidence: Advisory planning from the 2026-10-15 snapshot: L-1042 totals 960 units; 720",
+  "  remain Quality-held onsite and 240 shipped on SH-882 / ASN-019443. Six of 80 measured parts",
+  "  failed; total nonconforming quantity is unknown and must not be extrapolated. The separate",
+  "  180 units of L-1038 are independently released and cover the first 180-unit Friday delivery,",
+  "  but the 240-unit 16:00 delivery remains short 240. L-1058's 300-unit offer is unconfirmed",
+  "  supply: collection is possible, but arrival is unconfirmed and the incoming material is not",
+  "  accepted. The $3,600 courier figure is a quote only, exceeds the stated $2,500 planner",
+  "  authority, and does not confirm a courier slot. Keep held stock on hold and shipped-lot",
+  "  containment with responsible Quality; do not treat the offer, quote, or any human assertion",
+  "  as approval. No replacement commitment is supportable before receipt and acceptance.",
+  "  Implication: Delivery recovery for the 240-unit shortfall is uncertain. No leg-specific",
+  "  confirmed qualified carrier, booking cutoff, pickup, transit, or customer delivery window is",
+  "  established in the executed evidence; do not infer expedited feasibility or change a",
+  "  customer commitment. Containment and delivery recovery are separate. Responsible owners must",
+  "  determine shipped-lot disposition and notification; any replacement remains conditional on",
+  "  receipt and acceptance.",
+  "  Sources: synthetic incident, inventory and Quality hold, replacement offer and shipped ASN",
+  "  Recommended next step: contain exposure and evaluate delivery recovery separately",
+  "  Still missing: replacement incoming acceptance pending; replacement arrival unconfirmed",
+  "Quota pacing: estimated GPT tokens, wait 51.1s (no service retry)",
+  "Quota pacing: estimated GPT tokens, wait 57.6s (no service retry)",
+  "Commercial (assessment 1)",
+  "  Evidence: Customer delivery flexibility and disposition of the shipped suspect lot are",
+  "  unknown. No customer contact or acceptance is documented. The replacement offer is not a",
+  "  selectable plan; arrival is unconfirmed and incoming acceptance has not occurred. The $3,600",
+  "  freight quote exceeds the $2,500 planner authority; it is quoted cost, not approval or a",
+  "  confirmed courier slot. Any customer preference remains unpriced.",
+  "  Implication: Do not treat planning permission as customer acceptance or a changed",
+  "  commitment. No departure from the documented delivery windows is established. Keep the",
+  "  shipped-lot exposure and containment separate from delivery recovery; notify the responsible",
+  "  Quality contact as required. Manufacturing feasibility is for Production to assess.",
+  "  Sources: synthetic incident, replacement offer and shipped ASN, authority and contact policy",
+  "  Recommended next step: establish missing evidence before committing",
+  "  Still missing: customer flexibility for the second delivery unknown; customer disposition of",
+  "  shipped suspect stock unknown",
+  "Quota pacing: estimated GPT tokens, wait 51.0s (no service retry)",
+  "",
+  "=== INITIAL PLAN ===",
+  "Initial coordinator proposal: Maintain Quality containment separately from delivery recovery:",
+  "keep all 720 onsite L-1042 units held and escalate the 240 shipped suspect units (SH-882 /",
+  "ASN-019443) to responsible Quality. Six of 80 inspected parts failed; total nonconforming",
+  "quantity is unknown and must not be extrapolated. The independently released 180 units cover",
+  "the 10:00 delivery; the 16:00 delivery has a derived shortfall of 240. L-1058's 300-unit offer",
+  "is not a selectable plan or accepted supply: arrival and incoming acceptance are unconfirmed.",
+  "The $3,600 freight quote exceeds the $2,500 planner limit and confirms neither approval nor a",
+  "courier slot. No customer window change or replacement commitment is established. Seek owner",
+  "decisions and information; the offer's potential coverage has a readiness tradeoff, while",
+  "freight has an unapproved quoted cost. No objective weights are assumed. Owners retain",
+  "approval, customer contact, containment, and execution.",
+  "Next step: contain exposure and evaluate delivery recovery separately",
+  "Missing evidence: replacement incoming acceptance pending; replacement arrival unconfirmed;",
+  "customer flexibility for the second delivery unknown; customer disposition of shipped suspect",
+  "stock unknown",
+  "Preserved disagreement: Unsupported operational approval: freight_authority.",
+  "Decision-1 proposal validation (not execution): Addresses the issue | chosen-option",
+  "probability 95.2% | model-reported confidence 93%.",
+  "Required owner handoffs: responsible Quality/customer contact notification; Operations manager",
+  "freight approval; Quality-owned hold, inspection and shipped-lot containment",
+  "",
+  "=== HUMAN CLARIFICATION ===",
+  "Host-suggested review step (not a model recommendation): Contact the customer planner about",
+  "rescheduling the second 240 units due Fri 16 Oct 2026 16:00 UTC-05:00. Keep the first 180 at",
+  "Fri 16 Oct 2026 10:00 UTC-05:00 unchanged.",
+  "Rationale: released stock covers the first 180 units; the original second-window shortfall is",
+  "240.",
+  "Review the actual findings and coordinator proposal above before contacting the customer.",
+  "Planning update only; quality release, containment and required approvals remain separate.",
+  "1. Record customer response after contact: customer will move the second delivery.",
+  "2. Reject the recommendation and request leadership escalation.",
+  "Choose 1 or 2: Review pending: human-input deadline expired.",
+  "",
+  "=== UPDATED HANDOFF ===",
+  "Final advisory status: pending. No stock released, notification sent, customer commitment made",
+  "or spending authorized.",
+  "Unresolved evidence: replacement incoming acceptance pending; replacement arrival unconfirmed;",
+  "customer flexibility for the second delivery unknown; customer disposition of shipped suspect",
+  "stock unknown",
+  "Unresolved: Conflicting/unverified evidence remains.",
+  "Required owner actions: responsible Quality/customer contact notification; Operations manager",
+  "freight approval; Quality-owned hold, inspection and shipped-lot containment",
+  "Quality retains the held lot and owns shipped-suspect containment/disposition. Delivery relief",
+  "never closes the quality incident.",
+  "Actual model attempts: GPT 5/20; Decision-1 3/4; fixture tools 4/12."
+ ],
+ "timeline": [
+  {
+   "seq": 1,
+   "t_offset_s": 0.203,
+   "kind": "run_start",
+   "scenario": "quality-hold-v2",
+   "llm_profile": "gpt-6-luna",
+   "gpt_deadline_s": 120
+  },
+  {
+   "seq": 2,
+   "t_offset_s": 2.453,
+   "kind": "model_call_start",
+   "actor": "assessment",
+   "revision": 0,
+   "attempt": 1,
+   "deadline_s": 60,
+   "call_kind": "decision"
+  },
+  {
+   "seq": 3,
+   "t_offset_s": 3.172,
+   "kind": "model_call_end",
+   "actor": "assessment",
+   "attempt": 1,
+   "http_status": 200,
+   "usage": {
+    "input_tokens": 2165,
+    "output_tokens": 1
+   },
+   "elapsed_ms": 719.0,
+   "call_kind": "decision"
+  },
+  {
+   "seq": 4,
+   "t_offset_s": 3.172,
+   "kind": "decision_result",
+   "actor": "assessment",
+   "revision": 0,
+   "answers": {
+    "assessment_needed": {
+     "choice": "assessment_needed",
+     "confidence": 0.9938484139699155,
+     "probabilities": {
+      "assessment_needed": 0.9958989426466104,
+      "cannot_determine": 0.0019225372465257187,
+      "no_further_assessment": 0.002178520106863974
+     }
+    }
+   }
+  },
+  {
+   "seq": 5,
+   "t_offset_s": 4.25,
+   "kind": "model_call_start",
+   "actor": "selection",
+   "revision": 0,
+   "attempt": 1,
+   "deadline_s": 60,
+   "call_kind": "decision"
+  },
+  {
+   "seq": 6,
+   "t_offset_s": 4.531,
+   "kind": "model_call_end",
+   "actor": "selection",
+   "attempt": 1,
+   "http_status": 200,
+   "usage": {
+    "input_tokens": 1604,
+    "output_tokens": 3
+   },
+   "elapsed_ms": 281.0,
+   "call_kind": "decision"
+  },
+  {
+   "seq": 7,
+   "t_offset_s": 4.531,
+   "kind": "decision_result",
+   "actor": "selection",
+   "revision": 0,
+   "answers": {
+    "commercial_needed": {
+     "choice": "needed",
+     "confidence": 0.9799010074539414,
+     "probabilities": {
+      "cannot_determine": 0.007532787533915348,
+      "needed": 0.9866006716359609,
+      "not_needed": 0.00586654083012379
+     }
+    },
+    "production_needed": {
+     "choice": "not_needed",
+     "confidence": 0.5729024076123987,
+     "probabilities": {
+      "cannot_determine": 0.021599228320478586,
+      "needed": 0.2631324999379223,
+      "not_needed": 0.7152682717415991
+     }
+    },
+    "supply_chain_needed": {
+     "choice": "needed",
+     "confidence": 0.9826209206641354,
+     "probabilities": {
+      "cannot_determine": 0.0040394209780212674,
+      "needed": 0.9884139471094235,
+      "not_needed": 0.007546631912555148
+     }
+    }
+   }
+  },
+  {
+   "seq": 8,
+   "t_offset_s": 4.531,
+   "kind": "routing",
+   "detail": {
+    "active": [
+     "supply-chain",
+     "commercial"
+    ],
+    "uncertain": [],
+    "effective": {
+     "supply-chain": "needed",
+     "production": "not_needed",
+     "commercial": "needed"
+    }
+   }
+  },
+  {
+   "seq": 9,
+   "t_offset_s": 5.687,
+   "kind": "model_call_start",
+   "actor": "supply-chain",
+   "revision": 0,
+   "attempt": 1,
+   "deadline_s": 120,
+   "call_kind": "gpt"
+  },
+  {
+   "seq": 10,
+   "t_offset_s": 7.281,
+   "kind": "model_call_end",
+   "actor": "supply-chain",
+   "attempt": 1,
+   "http_status": 200,
+   "usage": {
+    "input_tokens": 1303,
+    "output_tokens": 59,
+    "total_tokens": 1362
+   },
+   "elapsed_ms": 1594.0,
+   "call_kind": "gpt"
+  },
+  {
+   "seq": 11,
+   "t_offset_s": 7.422,
+   "kind": "tool_call",
+   "actor": "supply-chain",
+   "tool": "read_inventory",
+   "evidence_id": "fixture:inventory:quality-v2",
+   "result_chars": 625
+  },
+  {
+   "seq": 12,
+   "t_offset_s": 7.422,
+   "kind": "tool_call",
+   "actor": "supply-chain",
+   "tool": "read_shipment",
+   "evidence_id": "fixture:shipment:quality-v2",
+   "result_chars": 847
+  },
+  {
+   "seq": 13,
+   "t_offset_s": 7.422,
+   "kind": "pacing_wait",
+   "wait_kind": "gpt-tokens",
+   "seconds": 58.3
+  },
+  {
+   "seq": 14,
+   "t_offset_s": 65.703,
+   "kind": "model_call_start",
+   "actor": "supply-chain",
+   "revision": 0,
+   "attempt": 1,
+   "deadline_s": 120,
+   "call_kind": "gpt"
+  },
+  {
+   "seq": 15,
+   "t_offset_s": 74.578,
+   "kind": "model_call_end",
+   "actor": "supply-chain",
+   "attempt": 1,
+   "http_status": 200,
+   "usage": {
+    "input_tokens": 1837,
+    "output_tokens": 629,
+    "total_tokens": 2466
+   },
+   "elapsed_ms": 8875.0,
+   "call_kind": "gpt"
+  },
+  {
+   "seq": 16,
+   "t_offset_s": 74.593,
+   "kind": "pacing_wait",
+   "wait_kind": "gpt-tokens",
+   "seconds": 51.1
+  },
+  {
+   "seq": 17,
+   "t_offset_s": 125.703,
+   "kind": "model_call_start",
+   "actor": "commercial",
+   "revision": 0,
+   "attempt": 1,
+   "deadline_s": 120,
+   "call_kind": "gpt"
+  },
+  {
+   "seq": 18,
+   "t_offset_s": 128.109,
+   "kind": "model_call_end",
+   "actor": "commercial",
+   "attempt": 1,
+   "http_status": 200,
+   "usage": {
+    "input_tokens": 1296,
+    "output_tokens": 61,
+    "total_tokens": 1357
+   },
+   "elapsed_ms": 2406.0,
+   "call_kind": "gpt"
+  },
+  {
+   "seq": 19,
+   "t_offset_s": 128.109,
+   "kind": "tool_call",
+   "actor": "commercial",
+   "tool": "read_shipment",
+   "evidence_id": "fixture:shipment:quality-v2",
+   "result_chars": 847
+  },
+  {
+   "seq": 20,
+   "t_offset_s": 128.109,
+   "kind": "tool_call",
+   "actor": "commercial",
+   "tool": "read_approval_policy",
+   "evidence_id": "fixture:policy:quality-v2",
+   "result_chars": 568
+  },
+  {
+   "seq": 21,
+   "t_offset_s": 128.125,
+   "kind": "pacing_wait",
+   "wait_kind": "gpt-tokens",
+   "seconds": 57.6
+  },
+  {
+   "seq": 22,
+   "t_offset_s": 185.718,
+   "kind": "model_call_start",
+   "actor": "commercial",
+   "revision": 0,
+   "attempt": 1,
+   "deadline_s": 120,
+   "call_kind": "gpt"
+  },
+  {
+   "seq": 23,
+   "t_offset_s": 194.656,
+   "kind": "model_call_end",
+   "actor": "commercial",
+   "attempt": 1,
+   "http_status": 200,
+   "usage": {
+    "input_tokens": 1777,
+    "output_tokens": 556,
+    "total_tokens": 2333
+   },
+   "elapsed_ms": 8938.0,
+   "call_kind": "gpt"
+  },
+  {
+   "seq": 24,
+   "t_offset_s": 194.672,
+   "kind": "pacing_wait",
+   "wait_kind": "gpt-tokens",
+   "seconds": 51.0
+  },
+  {
+   "seq": 25,
+   "t_offset_s": 245.734,
+   "kind": "model_call_start",
+   "actor": "coordinator",
+   "revision": 0,
+   "attempt": 1,
+   "deadline_s": 120,
+   "call_kind": "gpt"
+  },
+  {
+   "seq": 26,
+   "t_offset_s": 253.437,
+   "kind": "model_call_end",
+   "actor": "coordinator",
+   "attempt": 1,
+   "http_status": 200,
+   "usage": {
+    "input_tokens": 3499,
+    "output_tokens": 747,
+    "total_tokens": 4246
+   },
+   "elapsed_ms": 7703.0,
+   "call_kind": "gpt"
+  },
+  {
+   "seq": 27,
+   "t_offset_s": 254.609,
+   "kind": "model_call_start",
+   "actor": "validation",
+   "revision": 0,
+   "attempt": 1,
+   "deadline_s": 60,
+   "call_kind": "decision"
+  },
+  {
+   "seq": 28,
+   "t_offset_s": 254.875,
+   "kind": "model_call_end",
+   "actor": "validation",
+   "attempt": 1,
+   "http_status": 200,
+   "usage": {
+    "input_tokens": 2492,
+    "output_tokens": 1
+   },
+   "elapsed_ms": 266.0,
+   "call_kind": "decision"
+  },
+  {
+   "seq": 29,
+   "t_offset_s": 254.875,
+   "kind": "decision_result",
+   "actor": "validation",
+   "revision": 0,
+   "answers": {
+    "validation": {
+     "choice": "Addresses the issue",
+     "confidence": 0.9276538135597505,
+     "probabilities": {
+      "Addresses the issue": 0.9517692090398338,
+      "Cannot determine": 0.006412971799831751,
+      "Needs revision": 0.04181781916033449
+     }
+    }
+   }
+  },
+  {
+   "seq": 30,
+   "t_offset_s": 554.89,
+   "kind": "final",
+   "status": "pending",
+   "code": 2,
+   "warnings": 0,
+   "gpt_attempts": 5,
+   "decision_attempts": 3,
+   "transport_retries": 0
+  }
+ ],
+ "integrity": {
+  "transcript_sha256": "51bd9f04c2191044902e76481cfcd88eee927174742939f786c48c1c42dd89ef",
+  "private_fields_omitted": [
+   "APIM run id",
+   "message bodies",
+   "identity",
+   "endpoints"
+  ],
+  "usage_note": "usage per request as returned; null when absent"
+ }
+}

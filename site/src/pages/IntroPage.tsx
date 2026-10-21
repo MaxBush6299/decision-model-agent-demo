@@ -14,7 +14,8 @@ export function IntroPage() {
         <div className="home-hero-copy">
           <h2 id="intro-title">Explore how decision models work</h2>
           <p className="learn-deck">Some AI writes an answer. A decision model helps choose among known answers. Start with what that means, then follow how a decision model, a language model, software rules, and a person work together.</p>
-        </div>
+                    <p className="home-hero-cta"><a className="home-start" href="#showcase">Open the Demo showcase</a></p>
+                  </div>
       </header>
 
       <section className="intro-basics intro-what" aria-labelledby="basics-what-title">
@@ -73,10 +74,19 @@ export function IntroPage() {
       </section>
 
       <section className="home-launchpad" aria-labelledby="home-paths-title">
-        <h3 id="home-paths-title">Now follow a recorded decision</h3>
-        <p>Tomorrow’s factory needs 480 assemblies. There are parts for 310. See the ideas above in five steps: the issue, routing, specialist advice, validation, and human review. Learn separates supplied facts, model judgments, ordinary rules, and the person’s decision.</p>
-        <a className="home-start" href="#learn">Follow the recorded shortage</a>
-        <p className="home-provenance">One recorded case with synthetic facts. No actions were executed. Reading Home or Learn makes no new model calls.</p>
+        <h3 id="home-paths-title">Go deeper</h3>
+        <div className="home-path-cards">
+          <article className="home-path-card">
+            <h4>Learn: how decision models work</h4>
+            <p>An in-depth dive into what a decision model decides, and how routing, specialist advice, validation, and human review fit together in one worked example.</p>
+            <a className="home-start" href="#learn">Dive into how it works</a>
+          </article>
+          <article className="home-path-card">
+            <h4>Demo showcase</h4>
+            <p>Explore more sample scenarios and go deeper into the flow: four scenarios replayed on one diagram of agents working a case.</p>
+            <a className="home-start home-start-secondary" href="#showcase">Explore the scenarios</a>
+          </article>
+        </div>
       </section>
 
       <details className="home-support">

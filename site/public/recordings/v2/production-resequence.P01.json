@@ -1,0 +1,436 @@
+{
+ "schema_version": "1.0-candidate",
+ "mode": "recorded_live",
+ "transport": "apim",
+ "data": "synthetic",
+ "recording_alias": "production-resequence-P01",
+ "scenario": "production-resequence",
+ "source_commit": "a7860e7",
+ "model_profile": "gpt-6-luna",
+ "captured_utc_date": "2026-10-20",
+ "disclosure": {
+  "runs_recorded_for_scenario": 2,
+  "selected": "P02",
+  "selection_rule": "independent semantic review; clean advisory_complete preferred; earliest ordinal ties",
+  "all_attempts": [
+   {
+    "id": "P01",
+    "host_status": "pending",
+    "review_note": "correct proposal; validation chose Addresses the issue at 67%, below routing policy, so host paused"
+   },
+   {
+    "id": "P02",
+    "host_status": "advisory_complete",
+    "review_note": "clean"
+   }
+  ],
+  "caveat": "Small sample; observed behavior, not reliability or readiness.",
+  "shown_run": "P01",
+  "shown_is_selected": false
+ },
+ "display_transcript": [
+  "LIVE Azure Foundry inference | SYNTHETIC fixture tools | proposals only",
+  "GPT deployment=<redacted>; profile=gpt-6-luna; local pacing=10 RPM/10,000 estimated TPM; output allowance=2,400 tokens.",
+  "At most one clarification; hard maximum 20 GPT +4 Decision-1 attempts, not expected runtime.",
+  "",
+  "=== CASE ===",
+  "SYNTHETIC Choose a qualified replacement cell | snapshot Thu 15 Oct 2026 14:00 UTC-05:00",
+  "Fictional Tier-1 customer | order SO-6102",
+  "Press P1 is unavailable until Friday 12:00. No replacement cell has been chosen. Compare P2",
+  "(30-minute setup, 160/hour) with P3 (10-minute setup, 100/hour): different setup effort, cell",
+  "occupancy and completion margins. Both are qualified with documented staffed slots.",
+  "Stock/material allocation, the contracted pickup, customer window and zero incremental freight",
+  "are fixed for either choice.",
+  "Expected specialist route: 1 (Production cell comparison). Live decisions may differ; no",
+  "forced routing.",
+  "Demand 500; unallocated released finished units 100; planned production 400.",
+  "Released materials 440 minus other-order reservations 0 = 440 available.",
+  "Unselected option cell-p2: 180 cell minutes; ready Thu 15 Oct 2026 18:30 UTC-05:00; freight $0",
+  "/ $2,500 authority.",
+  "  500 units arrive Fri 16 Oct 2026 09:30 UTC-05:00.",
+  "Unselected option cell-p3: 250 cell minutes; ready Thu 15 Oct 2026 19:25 UTC-05:00; freight $0",
+  "/ $2,500 authority.",
+  "  500 units arrive Fri 16 Oct 2026 09:30 UTC-05:00.",
+  "Synthetic read-only planning records; no real shipment, production or customer writes.",
+  "",
+  "=== ASSESSMENT NEED ===",
+  "Decision-1 overall assessment need: assessment needed | chosen-option probability 99.5% |",
+  "model-reported confidence 99%.",
+  "Next: select contributing specialists.",
+  "",
+  "=== TEAM ===",
+  "Supply-Chain: model choice not needed | chosen-option probability 87.6% | model-reported",
+  "confidence 81%.",
+  "  Routing outcome: skip specialist.",
+  "Production: model choice needed | chosen-option probability 99.4% | model-reported confidence",
+  "99%.",
+  "  Routing outcome: consult specialist.",
+  "Commercial: model choice not needed | chosen-option probability 89.4% | model-reported",
+  "confidence 84%.",
+  "  Routing outcome: skip specialist.",
+  "Actual specialist route: 1 | production",
+  "Quota pacing: estimated GPT tokens, wait 58.0s (no service retry)",
+  "",
+  "=== FINDINGS ===",
+  "Production (assessment 1)",
+  "  Evidence: Both replacement cells are documented as qualified and have staffed slots",
+  "  sufficient for the 400-unit build. Inventory evidence shows 100 released finished units, 440",
+  "  released material units and no held units; the build record defines the order as 100",
+  "  released units plus 400 new units. Neither option uses held stock.",
+  "  Implication: P2 reaches factory readiness earlier, while P3 has lower setup effort. Both fit",
+  "  staffed capacity without displacing documented reservations. These checks do not verify",
+  "  shipment arrival, customer delivery window, or execution authority; responsible owners must",
+  "  confirm those matters before acting.",
+  "  Sources: synthetic case, released stock and reserved materials, qualified capacity and",
+  "  committed orders",
+  "  Option assessment cell-p2: Qualified cell P2; 180 required cell minutes fit within 240",
+  "  available staffed minutes (60 minutes headroom), with no other-order reservation. Cell",
+  "  occupancy ends at Thursday 2026-10-15 17:30 UTC-05:00; packing follows separately and",
+  "  factory readiness is Thursday 2026-10-15 18:30 UTC-05:00. The build record gives the",
+  "  shipment due endpoint as Friday 2026-10-16 11:00 UTC-05:00; this is not a verified arrival",
+  "  time.",
+  "    Model claims: required_cell_minutes=180; available_cell_minutes=240; packing_minutes=60;",
+  "    ready_at=2026-10-15T18:30:00-05:00; uses_alternative_cell=True; requires_overtime=False;",
+  "    displaces_other_orders=False",
+  "    Sources: qualified capacity and committed orders, synthetic case",
+  "  Option assessment cell-p3: Qualified cell P3; 250 required cell minutes fit within 300",
+  "  available staffed minutes (50 minutes headroom), with no other-order reservation. Cell",
+  "  occupancy ends at Thursday 2026-10-15 18:25 UTC-05:00; packing follows separately and",
+  "  factory readiness is Thursday 2026-10-15 19:25 UTC-05:00. The build record gives the",
+  "  shipment due endpoint as Friday 2026-10-16 11:00 UTC-05:00; this is not a verified arrival",
+  "  time.",
+  "    Model claims: required_cell_minutes=250; available_cell_minutes=300; packing_minutes=60;",
+  "    ready_at=2026-10-15T19:25:00-05:00; uses_alternative_cell=True; requires_overtime=False;",
+  "    displaces_other_orders=False",
+  "    Sources: qualified capacity and committed orders, synthetic case",
+  "Quota pacing: estimated GPT tokens, wait 52.0s (no service retry)",
+  "",
+  "=== INITIAL PLAN ===",
+  "Initial coordinator proposal: Recommend P2: it reaches factory readiness Thursday 2026-10-15",
+  "18:30 UTC-05:00, 55 minutes before P3, with 60 minutes of staffed-capacity headroom versus",
+  "P3's 50. P3 has the lower setup effort (10 vs. 30 minutes), but its slower run means later",
+  "readiness. Both are qualified, fit staffed slots without displacing other orders, and use the",
+  "same confirmed standard contracted shipment: 500 total order coverage (100 released finished",
+  "units plus 400 new-build units; 440 released materials support the build, not extra finished",
+  "coverage), Friday arrival within the documented customer window, and $0 incremental freight.",
+  "No held stock, overtime, expedited freight, or commitment change. This is planning only; the",
+  "$2,500 planner limit does not authorize execution. Responsible owners retain execution",
+  "responsibility.",
+  "Next step: plan on the already-qualified alternative cell",
+  "Selected planning option: cell-p2 (model recommendation, not execution).",
+  "Decision-1 proposal validation (not execution): Addresses the issue (below routing policy) |",
+  "chosen-option probability 67.0% | model-reported confidence 50%.",
+  "",
+  "=== HUMAN CLARIFICATION ===",
+  "Responsible-owner review is required; this case has no supported terminal evidence update.",
+  "Validation unresolved: Addresses the issue",
+  "1. Leave review pending for responsible-owner evidence.",
+  "2. Request leadership escalation for unresolved review.",
+  "Choose 1 or 2: Review pending: human-input deadline expired.",
+  "",
+  "=== UPDATED HANDOFF ===",
+  "Final advisory status: pending. No stock released, notification sent, customer commitment made",
+  "or spending authorized.",
+  "Unresolved: Validation unresolved: Addresses the issue",
+  "Actual shipment, production and customer actions remain with responsible owners.",
+  "Actual model attempts: GPT 3/20; Decision-1 3/4; fixture tools 2/12."
+ ],
+ "timeline": [
+  {
+   "seq": 1,
+   "t_offset_s": 0.078,
+   "kind": "run_start",
+   "scenario": "production-resequence-v2",
+   "llm_profile": "gpt-6-luna",
+   "gpt_deadline_s": 120
+  },
+  {
+   "seq": 2,
+   "t_offset_s": 1.141,
+   "kind": "model_call_start",
+   "actor": "assessment",
+   "revision": 0,
+   "attempt": 1,
+   "deadline_s": 60,
+   "call_kind": "decision"
+  },
+  {
+   "seq": 3,
+   "t_offset_s": 1.672,
+   "kind": "model_call_end",
+   "actor": "assessment",
+   "attempt": 1,
+   "http_status": 200,
+   "usage": {
+    "input_tokens": 2619,
+    "output_tokens": 1
+   },
+   "elapsed_ms": 531.0,
+   "call_kind": "decision"
+  },
+  {
+   "seq": 4,
+   "t_offset_s": 1.672,
+   "kind": "decision_result",
+   "actor": "assessment",
+   "revision": 0,
+   "answers": {
+    "assessment_needed": {
+     "choice": "assessment_needed",
+     "confidence": 0.9930034572110911,
+     "probabilities": {
+      "assessment_needed": 0.9953356381407273,
+      "cannot_determine": 0.0014964266392085417,
+      "no_further_assessment": 0.0031679352200641316
+     }
+    }
+   }
+  },
+  {
+   "seq": 5,
+   "t_offset_s": 2.766,
+   "kind": "model_call_start",
+   "actor": "selection",
+   "revision": 0,
+   "attempt": 1,
+   "deadline_s": 60,
+   "call_kind": "decision"
+  },
+  {
+   "seq": 6,
+   "t_offset_s": 3.266,
+   "kind": "model_call_end",
+   "actor": "selection",
+   "attempt": 1,
+   "http_status": 200,
+   "usage": {
+    "input_tokens": 3234,
+    "output_tokens": 3
+   },
+   "elapsed_ms": 500.0,
+   "call_kind": "decision"
+  },
+  {
+   "seq": 7,
+   "t_offset_s": 3.266,
+   "kind": "decision_result",
+   "actor": "selection",
+   "revision": 0,
+   "answers": {
+    "commercial_needed": {
+     "choice": "not_needed",
+     "confidence": 0.84169672567285,
+     "probabilities": {
+      "cannot_determine": 0.011259646907669991,
+      "needed": 0.09427586931043,
+      "not_needed": 0.8944644837819
+     }
+    },
+    "production_needed": {
+     "choice": "needed",
+     "confidence": 0.9910281465062887,
+     "probabilities": {
+      "cannot_determine": 0.0019189078057734916,
+      "needed": 0.9940187643375258,
+      "not_needed": 0.004062327856700673
+     }
+    },
+    "supply_chain_needed": {
+     "choice": "not_needed",
+     "confidence": 0.8134008828560495,
+     "probabilities": {
+      "cannot_determine": 0.00589975070980995,
+      "needed": 0.11849966071949039,
+      "not_needed": 0.8756005885706997
+     }
+    }
+   }
+  },
+  {
+   "seq": 8,
+   "t_offset_s": 3.266,
+   "kind": "routing",
+   "detail": {
+    "active": [
+     "production"
+    ],
+    "uncertain": [],
+    "effective": {
+     "supply-chain": "not_needed",
+     "production": "needed",
+     "commercial": "not_needed"
+    }
+   }
+  },
+  {
+   "seq": 9,
+   "t_offset_s": 4.5,
+   "kind": "model_call_start",
+   "actor": "production",
+   "revision": 0,
+   "attempt": 1,
+   "deadline_s": 120,
+   "call_kind": "gpt"
+  },
+  {
+   "seq": 10,
+   "t_offset_s": 6.219,
+   "kind": "model_call_end",
+   "actor": "production",
+   "attempt": 1,
+   "http_status": 200,
+   "usage": {
+    "input_tokens": 1467,
+    "output_tokens": 58,
+    "total_tokens": 1525
+   },
+   "elapsed_ms": 1719.0,
+   "call_kind": "gpt"
+  },
+  {
+   "seq": 11,
+   "t_offset_s": 6.438,
+   "kind": "tool_call",
+   "actor": "production",
+   "tool": "read_inventory",
+   "evidence_id": "fixture:inventory:production-resequence-v2",
+   "result_chars": 427
+  },
+  {
+   "seq": 12,
+   "t_offset_s": 6.438,
+   "kind": "tool_call",
+   "actor": "production",
+   "tool": "read_build",
+   "evidence_id": "fixture:build:production-resequence-v2",
+   "result_chars": 1950
+  },
+  {
+   "seq": 13,
+   "t_offset_s": 6.453,
+   "kind": "pacing_wait",
+   "wait_kind": "gpt-tokens",
+   "seconds": 58.0
+  },
+  {
+   "seq": 14,
+   "t_offset_s": 64.516,
+   "kind": "model_call_start",
+   "actor": "production",
+   "revision": 0,
+   "attempt": 1,
+   "deadline_s": 120,
+   "call_kind": "gpt"
+  },
+  {
+   "seq": 15,
+   "t_offset_s": 72.531,
+   "kind": "model_call_end",
+   "actor": "production",
+   "attempt": 1,
+   "http_status": 200,
+   "usage": {
+    "input_tokens": 3574,
+    "output_tokens": 871,
+    "total_tokens": 4445
+   },
+   "elapsed_ms": 8015.0,
+   "call_kind": "gpt"
+  },
+  {
+   "seq": 16,
+   "t_offset_s": 72.563,
+   "kind": "pacing_wait",
+   "wait_kind": "gpt-tokens",
+   "seconds": 52.0
+  },
+  {
+   "seq": 17,
+   "t_offset_s": 124.516,
+   "kind": "model_call_start",
+   "actor": "coordinator",
+   "revision": 0,
+   "attempt": 1,
+   "deadline_s": 120,
+   "call_kind": "gpt"
+  },
+  {
+   "seq": 18,
+   "t_offset_s": 131.219,
+   "kind": "model_call_end",
+   "actor": "coordinator",
+   "attempt": 1,
+   "http_status": 200,
+   "usage": {
+    "input_tokens": 6016,
+    "output_tokens": 537,
+    "total_tokens": 6553
+   },
+   "elapsed_ms": 6703.0,
+   "call_kind": "gpt"
+  },
+  {
+   "seq": 19,
+   "t_offset_s": 132.344,
+   "kind": "model_call_start",
+   "actor": "validation",
+   "revision": 0,
+   "attempt": 1,
+   "deadline_s": 60,
+   "call_kind": "decision"
+  },
+  {
+   "seq": 20,
+   "t_offset_s": 132.625,
+   "kind": "model_call_end",
+   "actor": "validation",
+   "attempt": 1,
+   "http_status": 200,
+   "usage": {
+    "input_tokens": 3048,
+    "output_tokens": 1
+   },
+   "elapsed_ms": 281.0,
+   "call_kind": "decision"
+  },
+  {
+   "seq": 21,
+   "t_offset_s": 132.625,
+   "kind": "decision_result",
+   "actor": "validation",
+   "revision": 0,
+   "answers": {
+    "validation": {
+     "choice": "Addresses the issue",
+     "confidence": 0.5046072216631869,
+     "probabilities": {
+      "Addresses the issue": 0.6697381477754579,
+      "Cannot determine": 0.013899970977334844,
+      "Needs revision": 0.3163618812472072
+     }
+    }
+   }
+  },
+  {
+   "seq": 22,
+   "t_offset_s": 432.641,
+   "kind": "final",
+   "status": "pending",
+   "code": 2,
+   "warnings": 0,
+   "gpt_attempts": 3,
+   "decision_attempts": 3,
+   "transport_retries": 0
+  }
+ ],
+ "integrity": {
+  "transcript_sha256": "a7018bc94b40e7ec462ced2a161f6831f2d7e5dff1135676712d395a5addabdd",
+  "private_fields_omitted": [
+   "APIM run id",
+   "message bodies",
+   "identity",
+   "endpoints"
+  ],
+  "usage_note": "usage per request as returned; null when absent"
+ }
+}

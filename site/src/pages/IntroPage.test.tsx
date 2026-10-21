@@ -6,10 +6,10 @@ import { IntroPage } from './IntroPage';
 it('opens with a conceptual introduction and puts the recorded case after teaching', () => {
   render(<IntroPage />);
   expect(screen.getByRole('heading', { name: 'Explore how decision models work' })).toBeVisible();
-  const action = screen.getByRole('link', { name: 'Follow the recorded shortage' });
+  const action = screen.getByRole('link', { name: 'Dive into how it works' });
   expect(action).toHaveAttribute('href', '#learn');
   expect(document.querySelectorAll('a[href="#learn"]')).toHaveLength(1);
-  expect(screen.getByText(/One recorded case with synthetic facts/)).toBeVisible();
+  expect(screen.getByRole('heading', { name: 'Learn: how decision models work' })).toBeVisible();
   expect(document.querySelector('a[href="#run"], a[href="#compare"]')).toBeNull();
   expect(document.querySelector('.home-hero a[href="#learn"]')).toBeNull();
   for (const name of [
@@ -102,4 +102,14 @@ it('keeps source context in a native disclosure without internal development plu
   expect(document.body.textContent).not.toMatch(/LOCAL MOCK|HARD BLOCKED|Developer view|optional local Live|workspace/i);
   fireEvent.click(summary);
   expect(screen.getByText('Sources and what they support')).not.toBeVisible();
+});
+
+it('links Home to the Demo showcase without readiness or live claims', () => {
+  render(<IntroPage />);
+  const links = screen.getAllByRole('link', { name: /Open the Demo showcase|Explore the scenarios/ });
+  expect(links).toHaveLength(2);
+  links.forEach((l) => expect(l).toHaveAttribute('href', '#showcase'));
+  expect(screen.getByRole('heading', { name: 'Demo showcase' })).toBeVisible();
+  expect(screen.queryByText(/selected after the fact|makes no new model calls|One recorded case/)).toBeNull();
+  expect(document.body.textContent).not.toMatch(/production-ready|is reliable/);
 });
