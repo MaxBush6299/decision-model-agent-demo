@@ -22,45 +22,40 @@ export function RecordingsPage({ scenario, runId }: { scenario?: string; runId?:
     getJson<IndexEntry[]>('index.json').then(setIndex).catch((e: Error) => setError(e.message));
   }, []);
 
-  if (error) return <p role="alert">Recordings unavailable: {error}</p>;
-  if (!index) return <p className="note">Loading recorded runs…</p>;
-  const entry = scenario ? index.find((e) => e.scenario === scenario) : undefined;
-  if (scenario && !entry) return <p role="alert">Unknown recorded scenario “{scenario}”. <a href="#recordings">Back to recorded runs</a></p>;
-  return entry ? <Viewer key={`${entry.scenario}/${runId ?? entry.selected}`} entry={entry} runId={runId} /> : <Cards index={index} />;
+  if (error) return <p role="alert">Demo showcase unavailable: {error}</p>;
+  if (!index) return <p className="note">Loading demo showcase…</p>;
+  const entry = scenario ? index.find((e) => e.scenario === scenario) : index[0];
+  if (scenario && !entry) return <p role="alert">Unknown scenario “{scenario}”. <a href="#showcase">Back to the demo showcase</a></p>;
+  if (!entry) return <p role="alert">Demo showcase unavailable: no scenarios.</p>;
+  return (
+    <div className="learn-page rec-page">
+      <Selector index={index} current={entry.scenario} />
+      <Viewer key={`${entry.scenario}/${runId ?? entry.selected}`} entry={entry} runId={runId} />
+    </div>
+  );
 }
 
-function Cards({ index }: { index: IndexEntry[] }) {
+function Selector({ index, current }: { index: IndexEntry[]; current: string }) {
   const [recs, setRecs] = useState<Record<string, Recording>>({});
   useEffect(() => {
     index.forEach((e) => getJson<Recording>(e.file).then((r) => setRecs((p) => ({ ...p, [e.scenario]: r }))).catch(() => undefined));
   }, [index]);
   return (
-    <div className="learn-page rec-page">
-      <header className="rec-hero">
-        <p className="eyebrow">Recorded runs</p>
-        <h2>Pick a replay</h2>
-        <p className="rec-label"><span className="badge">Recorded live</span> <span className="badge">Synthetic data</span> <span className="badge">No live calls</span></p>
-        <p className="note">Each replay was chosen after the fact from earlier attempts. {NOT_RELIABILITY}</p>
-      </header>
-      <div className="rec-cards">
-        {index.map((e) => {
-          const meta = SCENARIO_TITLES[e.scenario];
-          const rec = recs[e.scenario];
-          const out = rec ? outcomeOf(rec) : null;
-          return (
-            <a key={e.scenario} className={`rec-card rec-${out?.kind ?? 'other'}`} href={`#recordings/${e.scenario}`}>
-              <h3>{meta?.title ?? e.scenario}</h3>
-              <p>{meta?.question}</p>
-              {out && <p><span className={`rec-chip rec-chip-${out.kind}`}>{out.label}</span></p>}
-              <span className="rec-open">Watch replay →</span>
-            </a>
-          );
-        })}
-      </div>
-    </div>
+    <nav className="rec-selector" aria-label="Choose a scenario">
+      {index.map((e) => {
+        const meta = SCENARIO_TITLES[e.scenario];
+        const rec = recs[e.scenario];
+        const out = rec ? outcomeOf(rec) : null;
+        return (
+          <a key={e.scenario} className={`rec-card rec-${out?.kind ?? 'other'}`} href={`#showcase/${e.scenario}`} aria-current={e.scenario === current ? 'true' : undefined}>
+            <h3>{meta?.title ?? e.scenario}</h3>
+            {out && <span className={`rec-chip rec-chip-${out.kind}`}>{out.label}</span>}
+          </a>
+        );
+      })}
+    </nav>
   );
 }
-
 const TOUR = [
   { id: 'kpis', title: 'Run summary', text: 'These cards count events straight from the recording: model calls, tool calls, recorded time and tokens. Nothing is estimated.' },
   { id: 'routing', title: 'Who picks the path', text: 'Decision-1 answers a routing question for each specialist. The host’s policy code, not the model, applies the routing and the final status.' },
@@ -98,7 +93,7 @@ function Viewer({ entry, runId }: { entry: IndexEntry; runId?: string }) {
   const current: TimelineEvent | undefined = timeline[idx];
   useEffect(() => { const t = termRef.current; if (t) t.scrollTop = t.scrollHeight; }, [idx]);
 
-  if (error) return <p role="alert">{error} <a href="#recordings">Back to recorded runs</a></p>;
+  if (error) return <p role="alert">{error} <a href="#showcase">Back to the demo showcase</a></p>;
   if (!rec || !current) return <p className="note">Loading recording…</p>;
 
   const meta = SCENARIO_TITLES[entry.scenario];
@@ -112,11 +107,10 @@ function Viewer({ entry, runId }: { entry: IndexEntry; runId?: string }) {
   const donut = donutSegments(routing);
 
   return (
-    <div className="learn-page rec-page">
-      <p><a href="#recordings">← All recorded runs</a></p>
+    <div className="rec-viewer">
       <header className="rec-viewer-head">
         <div>
-          <p className="eyebrow">Recorded run {showId} · captured {rec.captured_utc_date}</p>
+          <p className="eyebrow">Demo showcase · replay of {showId} · captured {rec.captured_utc_date}</p>
           <h2>{meta?.title ?? entry.scenario}</h2>
           <p className="learn-deck">{meta?.question}</p>
           <p className="rec-label"><span className="badge">Recorded live</span> <span className="badge">Synthetic data</span> <span className="badge">No live calls</span> <span className={`rec-chip rec-chip-${out.kind}`}>{out.label}</span></p>
@@ -138,8 +132,8 @@ function Viewer({ entry, runId }: { entry: IndexEntry; runId?: string }) {
       <div className="rec-disclosure-banner" data-tour="disclosure">
         {isSelected
           ? <>This replay was <strong>selected</strong> after the fact; other attempts, where they exist, are listed under Runs &amp; disclosure.</>
-          : <>Showing <strong>{showId}</strong>, a <strong>non-selected</strong> attempt. The selected run is <a href={`#recordings/${entry.scenario}`}>{rec.disclosure.selected}</a>.</>}
-        {' '}<a href="#recordings" onClick={(e) => { e.preventDefault(); setTab('runs'); }}>See all attempts</a>. {NOT_RELIABILITY}
+          : <>Showing <strong>{showId}</strong>, a <strong>non-selected</strong> attempt. The selected run is <a href={`#showcase/${entry.scenario}`}>{rec.disclosure.selected}</a>.</>}
+        {' '}<a href="#showcase" onClick={(e) => { e.preventDefault(); setTab('runs'); }}>See all attempts</a>. {NOT_RELIABILITY}
       </div>
 
       <div role="tablist" className="rec-tabs" aria-label="Recorded run views">
@@ -307,7 +301,7 @@ function Runs({ entry, rec, showId, focus }: { entry: IndexEntry; rec: Recording
       <p>The replay shown by default (<strong>{d.selected}</strong>) was <strong>selected after the fact</strong> by an independent semantic review. Rule: {d.selection_rule}. Selection favors the displayed replay, so it is not a representative sample.</p>
       <ul className="rec-attempts">
         {d.all_attempts.map((a) => {
-          const link = a.id === entry.selected ? `#recordings/${entry.scenario}` : `#recordings/${entry.scenario}/${a.id}`;
+          const link = a.id === entry.selected ? `#showcase/${entry.scenario}` : `#showcase/${entry.scenario}/${a.id}`;
           return (
             <li key={a.id}>
               <a href={link} aria-current={a.id === showId ? 'true' : undefined}>{a.id}</a>{' '}

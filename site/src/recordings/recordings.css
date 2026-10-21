@@ -91,3 +91,7 @@ a.rec-card:hover, a.rec-card:focus-visible { box-shadow:0 2px 10px rgba(0,0,0,.1
 .rec-payload { text-align:center; font-size:.9rem; margin:18px 0 4px; color:#33414f; }
 @media (prefers-reduced-motion: reduce) { .rec-edge .edge-flow { animation:none; } .rec-gnode .node-card { transition:none; } .rec-edge .edge-pulse { display:none; } }
 @media (prefers-reduced-motion: reduce) { .rec-node { transition:none; } }
+.rec-selector { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px; margin:8px 0 18px; }
+.rec-selector .rec-card { padding:10px 14px; display:flex; flex-direction:column; gap:6px; }
+.rec-selector .rec-card h3 { margin:0; font-size:1rem; }
+.rec-selector .rec-card[aria-current="true"] { background:#f3eefc; box-shadow:0 0 0 2px var(--rec-purple); }

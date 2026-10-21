@@ -73,7 +73,7 @@ export function FlowCanvas({ timeline, idx }: { timeline: TimelineEvent[]; idx: 
   const seen = (n: FlowNode) => st.active === n || st.visited.has(n);
 
   const edgeState = (e: Edge): { active: boolean; done: boolean; ghost: boolean; kind: EdgeKind } => {
-    const ghost = st.skipped.has(e.to) || st.skipped.has(e.from) || (e.id === 'routing-coordinator' && !none);
+    const ghost = st.skipped.has(e.to) || st.skipped.has(e.from) || (e.id === 'routing-coordinator' && !(none && seen('routing')));
     let active = false;
     if (e.from === 'routing' && SPECIALISTS.includes(e.to)) active = st.active === e.to;
     else if (SPECIALISTS.includes(e.from) && e.to === 'coordinator') active = st.active === 'coordinator' && st.visited.has(e.from);
@@ -100,13 +100,13 @@ export function FlowCanvas({ timeline, idx }: { timeline: TimelineEvent[]; idx: 
             </marker>
           ))}
         </defs>
-        {EDGES.filter((e) => e.id !== 'routing-coordinator' || none).map((e) => {
+        {EDGES.map((e) => {
           const s = edgeState(e);
           const bow = e.id === 'routing-coordinator' ? 150 : 0;
           const d = path(e, bow);
           const m = mid(e, bow);
           return (
-            <g key={e.id} className={`rec-edge edge-${s.kind}${s.active ? ' active' : ''}${s.done ? ' done' : ''}${s.ghost && !(e.id === 'routing-coordinator') ? ' ghost' : ''}`} data-edge={e.id}>
+            <g key={e.id} className={`rec-edge edge-${s.kind}${s.active ? ' active' : ''}${s.done ? ' done' : ''}${s.ghost ? ' ghost' : ''}`} data-edge={e.id}>
               <path d={d} className="edge-line" markerEnd={`url(#arrow-${s.kind})`} />
               {s.active && <path d={d} className="edge-flow" />}
               {s.active && <circle r="5" className="edge-pulse"><animateMotion dur="1.4s" repeatCount="indefinite" path={d} /></circle>}

@@ -28,11 +28,13 @@ it('derives outcomes, counts and routing from recordings', () => {
   expect(q.timeline.every((e) => ['D1', 'LLM', 'Tool', 'Wait', 'Host'].includes(chipOf(e)))).toBe(true);
 });
 
-it('lists the four scenarios with run counts', async () => {
+it('offers a scenario selector on the single showcase page', async () => {
   mockFetch();
   render(<RecordingsPage />);
-  expect(await screen.findByText(/Pick a replay/)).toBeTruthy();
-  expect(screen.getAllByText(/Watch replay/)).toHaveLength(4);
+  expect(await screen.findByRole('group', { name: 'Request flow' })).toBeTruthy();
+  const nav = screen.getByRole('navigation', { name: 'Choose a scenario' });
+  expect(nav.querySelectorAll('a')).toHaveLength(4);
+  expect(nav.querySelectorAll('[aria-current]')).toHaveLength(1);
 });
 
 it('shows disclosure and steps through a recording', async () => {
@@ -88,12 +90,15 @@ it('flow canvas shows tools, parallel specialists and the no-specialist path fro
   const o = load<Recording>('order-pull-forward.json');
   const lastIdx = o.timeline.length - 1;
   const { container, rerender } = render(<FlowCanvas timeline={o.timeline} idx={lastIdx} />);
+  const layout = (el: Element) => Array.from(el.querySelectorAll('[data-node]')).map((n) => n.getAttribute('transform')).join('|');
+  const orderLayout = layout(container);
   expect(container.querySelectorAll('[data-node]').length).toBe(9);
   expect(container.querySelectorAll('.rec-toolchip').length).toBeGreaterThan(0);
-  expect(container.querySelector('[data-edge="routing-coordinator"]')).toBeNull();
+  expect(container.querySelector('[data-edge="routing-coordinator"]')?.getAttribute('class')).toContain('ghost');
   const c = load<Recording>('carrier-delay.json');
   rerender(<FlowCanvas timeline={c.timeline} idx={c.timeline.length - 1} />);
-  expect(container.querySelector('[data-edge="routing-coordinator"]')).not.toBeNull();
+  expect(container.querySelector('[data-edge="routing-coordinator"]')?.getAttribute('class')).not.toContain('ghost');
+  expect(layout(container)).toBe(orderLayout);
   expect(container.querySelectorAll('.rec-toolchip').length).toBe(0);
   expect(container.querySelector('[data-node="production"]')?.getAttribute('class')).toContain('node-ghost');
 });
