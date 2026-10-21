@@ -103,3 +103,12 @@ it('keeps source context in a native disclosure without internal development plu
   fireEvent.click(summary);
   expect(screen.getByText('Sources and what they support')).not.toBeVisible();
 });
+
+it('links Home to the Demo showcase without readiness or live claims', () => {
+  render(<IntroPage />);
+  const links = screen.getAllByRole('link', { name: 'Open the Demo showcase' });
+  expect(links).toHaveLength(2);
+  links.forEach((l) => expect(l).toHaveAttribute('href', '#showcase'));
+  expect(screen.getByText(/Replays of recorded runs, selected after the fact\. Nothing is executed/)).toBeVisible();
+  expect(document.body.textContent).not.toMatch(/Recorded runs|production-ready|is reliable/);
+});

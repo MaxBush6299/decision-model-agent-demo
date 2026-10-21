@@ -392,3 +392,8 @@ body:has(.workspace-learn) { background: #f4f1e9; color: #243443; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+.workspace-home .home-hero-cta { margin: 1.1rem 0 0; }
+.workspace-home .home-showcase-card { margin-top: 2rem; padding: 1.25rem; background: #fcfbf7; border: 1px solid #c9c6bb; border-left: 4px solid var(--learn-blue); }
+.workspace-home .home-showcase-card h4 { margin: 0 0 .5rem; }
+.workspace-home .home-showcase-card > a { font-weight: 700; }

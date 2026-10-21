@@ -14,7 +14,8 @@ export function IntroPage() {
         <div className="home-hero-copy">
           <h2 id="intro-title">Explore how decision models work</h2>
           <p className="learn-deck">Some AI writes an answer. A decision model helps choose among known answers. Start with what that means, then follow how a decision model, a language model, software rules, and a person work together.</p>
-        </div>
+                    <p className="home-hero-cta"><a className="home-start" href="#showcase">Open the Demo showcase</a></p>
+                  </div>
       </header>
 
       <section className="intro-basics intro-what" aria-labelledby="basics-what-title">
@@ -77,7 +78,13 @@ export function IntroPage() {
         <p>Tomorrow’s factory needs 480 assemblies. There are parts for 310. See the ideas above in five steps: the issue, routing, specialist advice, validation, and human review. Learn separates supplied facts, model judgments, ordinary rules, and the person’s decision.</p>
         <a className="home-start" href="#learn">Follow the recorded shortage</a>
         <p className="home-provenance">One recorded case with synthetic facts. No actions were executed. Reading Home or Learn makes no new model calls.</p>
-      </section>
+                <div className="home-showcase-card">
+                  <h4>Or watch a team of agents work a case</h4>
+                  <p>The Demo showcase replays recorded runs of four synthetic planning scenarios on one system diagram: Decision-1 scoring, host routing, specialist agents, a Coordinator and a final check. Step through each replay and read what each part produced. Outcomes range from advisory complete to requires human review.</p>
+                  <a href="#showcase">Open the Demo showcase</a>
+                  <p className="home-provenance">Replays of recorded runs, selected after the fact. Nothing is executed and opening it makes no new model calls. It shows what happened in those runs, not how reliably the system performs.</p>
+                </div>
+              </section>
 
       <details className="home-support">
         <summary>Sources and context</summary>
