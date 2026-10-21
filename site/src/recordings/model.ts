@@ -72,6 +72,12 @@ export const SCENARIO_TITLES: Record<string, { title: string; question: string }
   'order-pull-forward': { title: 'Order pull-forward', question: 'A customer asked for an earlier delivery. Full-early or split shipment?' },
 };
 
+export const SCENARIO_SUMMARIES: Record<string, string> = {
+  'quality-hold': 'A lot of mounting brackets is held for a quality incident, leaving a delivery shortfall. The system is deciding what the team should do next. Supply-chain and Commercial were consulted (Production was routed as not needed), and the recorded run ended pending a person’s review rather than completing.',
+  'carrier-delay': 'The primary carrier will miss the 09:00–11:00 window, but all 600 units are staged and an approved alternate carrier slot is documented. The system is deciding whether a plan fits within existing authority. Decision-1 routed to no specialists, so the recorded run went straight to the Coordinator and ended advisory complete.',
+  'production-resequence': 'Press P1 is unavailable until Friday 12:00, and cells P2 and P3 are both qualified but differ in setup time and rate. The system is deciding which replacement plan is feasible. Only Production was consulted, and the recorded run ended advisory complete.',
+  'order-pull-forward': 'A customer asked to compare a full 400-unit early delivery with a split 160/240 shipment. The system is deciding which plan is workable. Supply-chain and Commercial were consulted (Production was routed as cannot-determine), and the recorded run ended advisory complete.',
+};
 export type Outcome = 'complete' | 'pending' | 'other';
 
 export function outcomeOf(rec: Recording): { kind: Outcome; label: string } {

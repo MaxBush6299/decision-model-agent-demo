@@ -39,7 +39,7 @@ it('offers a scenario selector on the single showcase page', async () => {
 
 it('shows disclosure and steps through a recording', async () => {
   mockFetch();
-  render(<RecordingsPage scenario="order-pull-forward" />);
+  render(<RecordingsPage scenario="order-pull-forward" detail />);
   expect(await screen.findByText(/selected/i, { selector: 'strong' })).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Next' }));
   expect(screen.getByText(/Step 2 of/)).toBeTruthy();
@@ -51,7 +51,7 @@ it('shows disclosure and steps through a recording', async () => {
 
 it('discloses a non-selected pending attempt', async () => {
   mockFetch();
-  render(<RecordingsPage scenario="carrier-delay" runId="C01" />);
+  render(<RecordingsPage scenario="carrier-delay" runId="C01" detail />);
   expect(await screen.findByText(/non-selected/)).toBeTruthy();
   expect(screen.getAllByText(/Held for a person|pending/i).length).toBeGreaterThan(0);
 });
@@ -101,4 +101,25 @@ it('flow canvas shows tools, parallel specialists and the no-specialist path fro
   expect(layout(container)).toBe(orderLayout);
   expect(container.querySelectorAll('.rec-toolchip').length).toBe(0);
   expect(container.querySelector('[data-node="production"]')?.getAttribute('class')).toContain('node-ghost');
+});
+
+it('demo mode hides detail panels, keeps one footnote, and reveals terminal sections with the active one highlighted', async () => {
+  mockFetch();
+  const { container } = render(<RecordingsPage scenario="order-pull-forward" />);
+  expect(await screen.findByRole('group', { name: 'Request flow' })).toBeTruthy();
+  expect(screen.queryByRole('tab')).toBeNull();
+  expect(screen.queryByText(/Synthetic data/)).toBeNull();
+  expect(screen.queryByText(/No live calls/)).toBeNull();
+  expect(screen.getByText(/Replay of a real recorded run, selected after the fact\./)).toBeTruthy();
+  expect(screen.getByRole('region', { name: 'Run summary' })).toBeTruthy();
+  expect(screen.getByText(/Press play/)).toBeTruthy();
+  expect(container.querySelector('.rec-terminal')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Show terminal' }));
+  const count = () => container.querySelectorAll('.rec-term-sec').length;
+  const before = count();
+  for (let i = 0; i < 60; i++) { const b = screen.getByRole('button', { name: 'Next' }); if ((b as HTMLButtonElement).disabled) break; fireEvent.click(b); }
+  expect(count()).toBeGreaterThan(before);
+  expect(screen.queryByText(/Press play/)).toBeNull();
+  expect(screen.getByRole('complementary', { name: 'Live step' }).textContent).toMatch(/Host status/);
+  expect(container.querySelectorAll('.rec-term-sec.active')).toHaveLength(1);
 });
