@@ -73,10 +73,10 @@ export const SCENARIO_TITLES: Record<string, { title: string; question: string }
 };
 
 export const SCENARIO_SUMMARIES: Record<string, string> = {
-  'quality-hold': 'A lot of mounting brackets is held for a quality incident, leaving a delivery shortfall. The system is deciding what the team should do next. Supply-chain and Commercial were consulted (Production was routed as not needed), and the recorded run ended pending a person’s review rather than completing.',
-  'carrier-delay': 'The primary carrier will miss the 09:00–11:00 window, but all 600 units are staged and an approved alternate carrier slot is documented. The system is deciding whether a plan fits within existing authority. Decision-1 routed to no specialists, so the recorded run went straight to the Coordinator and ended advisory complete.',
-  'production-resequence': 'Press P1 is unavailable until Friday 12:00, and cells P2 and P3 are both qualified but differ in setup time and rate. The system is deciding which replacement plan is feasible. Only Production was consulted, and the recorded run ended advisory complete.',
-  'order-pull-forward': 'A customer asked to compare a full 400-unit early delivery with a split 160/240 shipment. The system is deciding which plan is workable. Supply-chain and Commercial were consulted (Production was routed as cannot-determine), and the recorded run ended advisory complete.',
+  'quality-hold': 'A lot of mounting brackets is held for a quality incident, leaving a delivery shortfall.',
+  'carrier-delay': 'The primary carrier will miss the 09:00–11:00 window, but all 600 units are staged and an approved alternate carrier slot is documented.',
+  'production-resequence': 'Press P1 is unavailable until Friday 12:00, and cells P2 and P3 are both qualified but differ in setup time and rate.',
+  'order-pull-forward': 'A customer asked to compare a full 400-unit early delivery with a split 160/240 shipment.',
 };
 export type Outcome = 'complete' | 'pending' | 'other';
 
@@ -235,4 +235,48 @@ export function playbackDelayMs(prev: TimelineEvent | undefined, next: TimelineE
   const gap = Math.max(0, next.t_offset_s - (prev?.t_offset_s ?? 0));
   const effective = skipWaits ? Math.min(gap, 1.2) : gap;
   return Math.max(120, (effective * 1000) / speed);
+}
+
+export interface RequestCard { title: string; items: string[] }
+
+export function requestCard(rec: Recording): RequestCard {
+  const sec = transcriptSections(rec).find((s) => s.title === 'CASE');
+  const lines = sec ? sec.lines.slice(1) : [];
+  const head = lines.shift() ?? '';
+  const joined = lines.join(' ').replace(/Expected specialist route:.*?no\s+forced\s+routing\./i, '').replace(/\s+/g, ' ').trim();
+  const parts = joined.split(/(?<=[.])\s+(?=[A-Z0-9])/).map((s) => s.trim()).filter(Boolean);
+  return { title: head, items: parts };
+}
+
+export interface StepExplain { what: string; gets: string; produces: string }
+
+const actorName = (a?: string) => (a ? a.replace(/-/g, ' ') : 'step');
+
+export function stepExplain(e: TimelineEvent): StepExplain {
+  const att = e.attempt ? `attempt ${e.attempt}` : '';
+  const dl = e.deadline_s ? `deadline ${e.deadline_s} s` : '';
+  const meta = [att, dl].filter(Boolean).join(', ');
+  switch (e.kind) {
+    case 'run_start': return { what: 'The run starts. The case on the left of this pane is the only input.', gets: 'The synthetic case', produces: 'Nothing yet' };
+    case 'model_call_start':
+      if (e.call_kind === 'decision') return { what: `Decision-1, a scoring service rather than a chat model, is asked about "${actorName(e.actor)}".`, gets: `The case facts${meta ? ` (${meta})` : ''}`, produces: 'Waiting for the scores' };
+      return { what: e.actor === 'coordinator' ? 'The Coordinator is asked to combine the specialist findings into one plan.' : `The ${actorName(e.actor)} agent is asked to assess the case, using read-only fixture tools.`, gets: e.actor === 'coordinator' ? `Specialist findings${meta ? ` (${meta})` : ''}` : `The case and its role instructions${meta ? ` (${meta})` : ''}`, produces: 'Waiting for the model response' };
+    case 'model_call_end':
+      return { what: `${e.call_kind === 'decision' ? 'Decision-1' : 'The model'} responded for "${actorName(e.actor)}".`, gets: 'The request above', produces: [e.http_status ? `HTTP ${e.http_status}` : '', e.usage ? `${e.usage.input_tokens ?? 0} in / ${e.usage.output_tokens ?? 0} out tokens` : '', e.elapsed_ms !== undefined ? `${(e.elapsed_ms / 1000).toFixed(2)} s` : ''].filter(Boolean).join(' · ') };
+    case 'decision_result': {
+      const first = e.answers ? Object.entries(e.answers)[0] : undefined;
+      return { what: 'Decision-1 scores each option. Probability and confidence are different numbers.', gets: `The case facts for "${actorName(e.actor)}"`, produces: first ? `${first[0]}: ${first[1].choice} (probability ${((first[1].probabilities[first[1].choice] ?? 0) * 100).toFixed(1)}%)` : 'Scores' };
+    }
+    case 'routing': return { what: 'Host policy code, not the model, turns the Decision-1 answers into who is consulted.', gets: 'The Decision-1 assessment', produces: e.detail?.effective ? Object.entries(e.detail.effective).map(([n, v]) => `${n}: ${v}`).join(' · ') : 'Routing applied' };
+    case 'tool_call': return { what: `${actorName(e.actor)} reads fixture data with a read-only tool.`, gets: `Tool ${e.tool ?? ''}`, produces: `Evidence ${e.evidence_id ?? ''} · ${e.result_chars ?? 0} characters` };
+    case 'pacing_wait': return { what: 'The host waits locally to stay inside the model rate limit.', gets: e.wait_kind ? `Limit: ${e.wait_kind}` : 'Rate limit', produces: `${e.seconds ?? '?'} s wait` };
+    case 'final': return { what: 'The host assigns the final status. Nothing is executed.', gets: 'The validated proposal and host checks', produces: `Status ${e.status} · code ${e.code} · warnings ${e.warnings ?? 0}` };
+    default: return { what: stepLabel(e), gets: '', produces: '' };
+  }
+}
+
+export function finalReason(rec: Recording): string[] {
+  const secs = transcriptSections(rec).filter((s) => s.title === 'UPDATED HANDOFF' || s.title === 'INITIAL PLAN');
+  const last = secs[secs.length - 1];
+  return last ? last.lines.slice(1).filter((l) => l.trim() && !/^Actual model attempts/.test(l)) : [];
 }

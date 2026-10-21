@@ -190,3 +190,27 @@ main:has(.rec-compact) .workspace-header .main-nav a, main:has(.rec-compact) .si
 .rec-compact .rec-kpis { padding:0 !important; border:0 !important; background:none !important; }
 .rec-compact .rec-stage svg { height:calc(100vh - 345px); }
 .rec-compact .rec-stage svg { height:calc(100vh - 362px); }
+
+/* Richer Live step */
+.rec-livebody { width:min(400px,44vw); }
+.rec-livebody .rec-live { display:flex; flex-direction:column; height:100%; min-height:0; padding:8px 12px; overflow:hidden; }
+.rec-live h3 { display:flex; justify-content:space-between; align-items:baseline; margin:0 0 4px; font-size:.95rem; }
+.rec-live-count { font-size:.72rem; font-weight:600; color:#5a6672; }
+.rec-progress { height:4px; background:#e3dfd2; border-radius:2px; margin-bottom:6px; flex:none; }
+.rec-progress i { display:block; height:100%; background:var(--rec-purple); border-radius:2px; transition:width .2s; }
+.rec-request { flex:none; max-height:42%; overflow:auto; background:#fffdf7; border:1px solid #e3dfd2; border-left:4px solid var(--rec-blue); border-radius:6px; padding:6px 10px; margin-bottom:6px; }
+.rec-request h4 { margin:0 0 2px; font-size:.72rem; text-transform:uppercase; letter-spacing:.06em; color:#5a6672; }
+.rec-request-title { margin:0 0 3px; font-size:.78rem; font-weight:700; }
+.rec-request ul { margin:0; padding-left:14px; font-size:.74rem; line-height:1.3; color:#2c3946; }
+.rec-request li { margin:0 0 2px; }
+.rec-live-step { flex:1; min-height:0; overflow:auto; font-size:.8rem; }
+.rec-live-step p { margin:2px 0; }
+.rec-explain { margin:4px 0; }
+.rec-explain dt { font-size:.68rem; text-transform:uppercase; letter-spacing:.05em; color:#5a6672; margin-top:5px; }
+.rec-explain dd { margin:0; font-size:.8rem; line-height:1.3; }
+.rec-live .rec-caption { flex:none; margin:4px 0 0; font-size:.68rem; }
+.rec-final { margin-top:6px; border-top:1px solid #e3dfd2; padding-top:4px; }
+.rec-live .rec-explain { display:block; }
+.rec-live .rec-explain dt { display:block; width:auto; }
+.rec-live .rec-explain dd { display:block; font-weight:400; margin:0 0 2px; }
+.rec-request { max-height:30%; }

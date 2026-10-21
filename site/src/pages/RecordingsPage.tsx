@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  attemptLabel, chipOf, kpis, outcomeOf, playbackDelayMs, routingOf, SCENARIO_SUMMARIES, SCENARIO_TITLES, stepLabel, transcriptSections,
+  attemptLabel, chipOf, kpis, outcomeOf, playbackDelayMs, routingOf, requestCard, finalReason, stepExplain, SCENARIO_SUMMARIES, SCENARIO_TITLES, stepLabel, transcriptSections,
   type IndexEntry, type Recording, type TimelineEvent,
 } from '../recordings/model';
 import { FlowCanvas } from '../recordings/FlowCanvas';
@@ -168,7 +168,7 @@ function Viewer({ entry, runId, detail }: { entry: IndexEntry; runId?: string; d
                 {started && <span className={`rec-tag tag-${chipOf(current)}`}>{chipOf(current)}</span>}
                 {started && !livePane && <span className="rec-live-tab-actor">{stepLabel(current)}</span>}
               </button>
-              {livePane && <div id="rec-live-pane" className="rec-livebody"><LiveStep e={current} started={started} /></div>}
+              {livePane && <div id="rec-live-pane" className="rec-livebody"><LiveStep rec={rec} e={current} started={started} idx={idx} total={timeline.length} /></div>}
             </div>
           </div>
 
@@ -242,17 +242,33 @@ function Viewer({ entry, runId, detail }: { entry: IndexEntry; runId?: string; d
   );
 }
 
-function LiveStep({ e, started }: { e: TimelineEvent; started: boolean }) {
+function LiveStep({ rec, e, started, idx, total }: { rec: Recording; e: TimelineEvent; started: boolean; idx: number; total: number }) {
+  const card = requestCard(rec);
+  const request = (
+    <section className="rec-request" aria-label="The request">
+      <h4>The request</h4>
+      {card.title && <p className="rec-request-title">{card.title}</p>}
+      <ul>{card.items.map((it, i) => <li key={i}>{it}</li>)}</ul>
+    </section>
+  );
   if (!started) {
-    return <aside className="rec-live" aria-label="Live step"><h3>Live step</h3><p className="rec-live-idle">Press play to watch this recorded run step by step.</p></aside>;
+    return <aside className="rec-live" aria-label="Live step"><h3>Live step</h3>{request}<p className="rec-live-idle">Press play to watch this recorded run step by step.</p></aside>;
   }
   const tag = chipOf(e);
+  const ex = stepExplain(e);
   return (
     <aside className="rec-live" aria-label="Live step">
-      <h3>Live step</h3>
-      <div className="rec-detail" aria-live="polite">
+      <h3>Live step <span className="rec-live-count">Step {idx + 1} of {total}</span></h3>
+      <div className="rec-progress" role="progressbar" aria-valuemin={1} aria-valuemax={total} aria-valuenow={idx + 1}><i style={{ width: `${((idx + 1) / total) * 100}%` }} /></div>
+      {request}
+      <div className="rec-live-step" aria-live="polite">
         <p><span className={`rec-tag tag-${tag}`}>{tag}</span> <strong>{stepLabel(e)}</strong></p>
-        <p className="note">Recorded at {e.t_offset_s.toFixed(1)} s{e.elapsed_ms !== undefined ? ` · took ${(e.elapsed_ms / 1000).toFixed(2)} s` : ''}{e.http_status ? ` · HTTP ${e.http_status}` : ''}</p>
+        <p className="note">Recorded at {e.t_offset_s.toFixed(1)} s</p>
+        <dl className="rec-explain">
+          <dt>What’s happening</dt><dd>{ex.what}</dd>
+          {ex.gets && <><dt>Gets</dt><dd>{ex.gets}</dd></>}
+          {ex.produces && <><dt>Produces</dt><dd>{ex.produces}</dd></>}
+        </dl>
         {e.answers && Object.entries(e.answers).map(([name, a]) => (
           <div key={name} className="rec-answer">
             <p><strong>{name}</strong>: {a.choice}</p>
@@ -261,17 +277,17 @@ function LiveStep({ e, started }: { e: TimelineEvent; started: boolean }) {
             ))}
           </div>
         ))}
-        {e.kind === 'routing' && e.detail?.effective && <p>Routing: {Object.entries(e.detail.effective).map(([n, v]) => `${n}: ${v}`).join('; ')}</p>}
-        {e.kind === 'tool_call' && <p>Evidence <code>{e.evidence_id}</code> · {e.result_chars} characters returned (fixture, read-only).</p>}
-        {e.usage && <p>Usage: {e.usage.input_tokens ?? 0} in / {e.usage.output_tokens ?? 0} out</p>}
-        {e.kind === 'final' && <p>Host status <strong>{e.status}</strong> (code {e.code}) · warnings {e.warnings}</p>}
-        {e.kind === 'pacing_wait' && <p>Local quota pacing before the next request.</p>}
+        {e.kind === 'final' && (
+          <div className="rec-final">
+            <p>Host status <strong>{e.status}</strong> (code {e.code}) · warnings {e.warnings} · GPT attempts {e.gpt_attempts} · Decision-1 attempts {e.decision_attempts}</p>
+            {finalReason(rec).map((l, i) => <p key={i} className="note">{l}</p>)}
+          </div>
+        )}
       </div>
       <p className="rec-caption">From the recorded event, not a re-enactment.</p>
     </aside>
   );
-}
-function donutSegments(r: ReturnType<typeof routingOf>) {
+}function donutSegments(r: ReturnType<typeof routingOf>) {
   if (!r) return [];
   const total = r.consult.length + r.skipped.length + r.uncertain.length || 1;
   const C = 251.33;
