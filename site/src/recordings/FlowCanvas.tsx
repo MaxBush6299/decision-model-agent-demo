@@ -104,13 +104,12 @@ export function FlowCanvas({ timeline, idx }: { timeline: TimelineEvent[]; idx: 
           const s = edgeState(e);
           const bow = e.id === 'routing-coordinator' ? 110 : 0;
           const d = path(e, bow);
-          const m = mid(e, bow);
           return (
             <g key={e.id} className={`rec-edge edge-${s.kind}${s.active ? ' active' : ''}${s.done ? ' done' : ''}${s.ghost ? ' ghost' : ''}`} data-edge={e.id}>
               <path d={d} className="edge-line" markerEnd={`url(#arrow-${s.kind})`} />
               {s.active && <path d={d} className="edge-flow" />}
               {s.active && <circle r="5" className="edge-pulse"><animateMotion dur="1.4s" repeatCount="indefinite" path={d} /></circle>}
-              {!s.ghost && <text x={m.x} y={m.y - 8} textAnchor="middle" className="edge-label">{e.label}</text>}
+
             </g>
           );
         })}
@@ -123,18 +122,24 @@ export function FlowCanvas({ timeline, idx }: { timeline: TimelineEvent[]; idx: 
               <rect width={NW} height={NH} rx="14" className="node-card" />
               <circle cx="20" cy="20" r="11" className="node-icon-bg" />
               <text x="20" y="25" textAnchor="middle" className="node-icon">{n.icon}</text>
-              <text x="38" y="24" className="node-type">{n.type.toUpperCase()}</text>
+              <text x="38" y="24" className="node-type" {...(n.type.length > 9 ? { textLength: NW - 48, lengthAdjust: "spacingAndGlyphs" as const } : {})}>{n.type.toUpperCase()}</text>
               <text x="12" y="48" className="node-name">{n.label}</text>
               {state === 'ghost' && <text x="12" y="60" className="node-note">skipped by host</text>}
               {state === 'active' && st.waiting && <text x={NW / 2} y={NH + 16} textAnchor="middle" className="node-wait">⏳ local pacing wait</text>}
               {tools.map((t, i) => (
                 <g key={t} transform={`translate(0,${NH + 10 + i * 20})`} className={`rec-toolchip${st.active === n.id && st.tool === t ? ' on' : ''}`}>
                   <rect width={NW} height="16" rx="8" />
-                  <text x="9" y="12">⚙ {t}</text>
+                  <text x="9" y="12" {...(t.length > 14 ? { textLength: NW - 18, lengthAdjust: "spacingAndGlyphs" as const } : {})}>⚙ {t}</text>
                 </g>
               ))}
             </g>
           );
+        })}
+        {EDGES.map((e) => {
+          const s = edgeState(e);
+          if (s.ghost) return null;
+          const m = mid(e, e.id === 'routing-coordinator' ? 110 : 0);
+          return <text key={e.id} x={m.x} y={m.y - 8} textAnchor="middle" className="edge-label edge-label-top">{e.label}</text>;
         })}
       </svg>
       <p className="rec-payload" aria-live="polite"><strong>{stepLabel(cur)}</strong>{payloadCaption(cur) ? ` — ${payloadCaption(cur)}` : ''}</p>

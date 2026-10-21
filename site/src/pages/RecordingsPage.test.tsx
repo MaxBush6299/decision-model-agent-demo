@@ -53,7 +53,7 @@ it('discloses a non-selected pending attempt', async () => {
   mockFetch();
   render(<RecordingsPage scenario="carrier-delay" runId="C01" detail />);
   expect(await screen.findByText(/non-selected/)).toBeTruthy();
-  expect(screen.getAllByText(/Held for a person|pending/i).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/Requires human review|pending/i).length).toBeGreaterThan(0);
 });
 
 it('rejects unknown scenarios', async () => {
@@ -66,7 +66,7 @@ it('relabels validation-below-policy pending runs and lights nodes from events',
   const c01 = load<Recording>('carrier-delay.C01.json');
   expect(outcomeOf(c01).label).toBe('Pending: validation below policy');
   expect(outcomeOf(load<Recording>('production-resequence.P01.json')).label).toBe('Pending: validation below policy');
-  expect(outcomeOf(load<Recording>('quality-hold.json')).label).toBe('Held for a person (pending)');
+  expect(outcomeOf(load<Recording>('quality-hold.json')).label).toBe('Requires human review');
   const q = load<Recording>('quality-hold.json');
   const end = flowAt(q.timeline, q.timeline.length - 1);
   expect(end.active).toBe('final');

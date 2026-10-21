@@ -85,14 +85,14 @@ export function outcomeOf(rec: Recording): { kind: Outcome; label: string } {
   if (fin?.status === 'advisory_complete') return { kind: 'complete', label: 'Advisory complete' };
   if (fin?.status === 'pending') {
     const note = rec.disclosure.all_attempts.find((a) => rec.recording_alias.endsWith(a.id))?.review_note ?? '';
-    return { kind: 'pending', label: /validation/i.test(note) ? 'Pending: validation below policy' : 'Held for a person (pending)' };
+    return { kind: 'pending', label: /validation/i.test(note) ? 'Pending: validation below policy' : 'Requires human review' };
   }
   return { kind: 'other', label: fin?.status ?? 'No final event recorded' };
 }
 
 export function attemptLabel(a: Attempt): string {
   if (a.host_status === 'advisory_complete') return 'Advisory complete';
-  return /validation/i.test(a.review_note) ? 'Pending: validation below policy' : 'Held for a person (pending)';
+  return /validation/i.test(a.review_note) ? 'Pending: validation below policy' : 'Requires human review';
 }
 
 export type FlowNode = 'request' | 'd1' | 'routing' | 'supply-chain' | 'production' | 'commercial' | 'coordinator' | 'validation' | 'final';

@@ -222,3 +222,12 @@ main:has(.rec-compact) .workspace-header .main-nav a, main:has(.rec-compact) .si
 .rec-reqref { font-size:.76rem; color:#2c3946; margin:0 0 6px; }
 .rec-reqref p { margin:0 0 4px; }
 .rec-link { background:none; border:0; padding:0; color:var(--rec-blue); text-decoration:underline; cursor:pointer; font:inherit; }
+
+/* Clipping fixes */
+.rec-selector .rec-neutral { border-left:5px solid #b9b5a6 !important; }
+.rec-live-tab .rec-tag { font-size:.6rem; padding:1px 3px; max-width:34px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; box-sizing:border-box; }
+.rec-compact .rec-kpis { grid-template-columns:1.8fr repeat(5,minmax(0,1fr)); }
+.rec-compact .rec-kpi { min-width:0; }
+.rec-compact .rec-kpi strong { overflow:hidden; text-overflow:ellipsis; }
+.rec-edge-label-fix {}
+text.edge-label-top { font-size:9.5px; fill:#6b7782; font-style:italic; paint-order:stroke; stroke:#fbf9f3; stroke-width:3px; stroke-linejoin:round; pointer-events:none; }

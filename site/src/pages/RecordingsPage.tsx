@@ -38,20 +38,13 @@ export function RecordingsPage({ scenario, runId, detail }: { scenario?: string;
 }
 
 function Selector({ index, current }: { index: IndexEntry[]; current: string }) {
-  const [recs, setRecs] = useState<Record<string, Recording>>({});
-  useEffect(() => {
-    index.forEach((e) => getJson<Recording>(e.file).then((r) => setRecs((p) => ({ ...p, [e.scenario]: r }))).catch(() => undefined));
-  }, [index]);
   return (
     <nav className="rec-selector" aria-label="Choose a scenario">
       {index.map((e) => {
         const meta = SCENARIO_TITLES[e.scenario];
-        const rec = recs[e.scenario];
-        const out = rec ? outcomeOf(rec) : null;
         return (
-          <a key={e.scenario} className={`rec-card rec-${out?.kind ?? 'other'}`} href={`#showcase/${e.scenario}`} aria-current={e.scenario === current ? 'true' : undefined}>
+          <a key={e.scenario} className="rec-card rec-neutral" href={`#showcase/${e.scenario}`} aria-current={e.scenario === current ? 'true' : undefined}>
             <h3>{meta?.title ?? e.scenario}</h3>
-            {out && <span className={`rec-chip rec-chip-${out.kind}`}>{out.label}</span>}
           </a>
         );
       })}
@@ -117,7 +110,7 @@ function Viewer({ entry, runId, detail }: { entry: IndexEntry; runId?: string; d
       <header className="rec-viewer-head">
         <div>
           {detail && <p className="eyebrow">Demo showcase · replay of {showId} · captured {rec.captured_utc_date}</p>}
-          <h2>{meta?.title ?? entry.scenario} <span className={`rec-chip rec-chip-${out.kind}`}>{out.label}</span>{detail && <> <span className="badge">Recorded live</span> <span className="badge">Synthetic data</span> <span className="badge">No live calls</span></>}</h2>
+          <h2>{meta?.title ?? entry.scenario} {started && idx === timeline.length - 1 && <span className={`rec-chip rec-chip-${out.kind}`}>{out.label}</span>}{detail && <> <span className="badge">Recorded live</span> <span className="badge">Synthetic data</span> <span className="badge">No live calls</span></>}</h2>
           <p className="learn-deck">{meta?.question}</p>
           {SCENARIO_SUMMARIES[entry.scenario] && <p className="rec-summary">{SCENARIO_SUMMARIES[entry.scenario]}</p>}
         </div>
@@ -166,7 +159,6 @@ function Viewer({ entry, runId, detail }: { entry: IndexEntry; runId?: string; d
             <div             className={`rec-livewrap${livePane ? ' open' : ''}`}>              <button type="button" className="rec-live-tab" aria-expanded={livePane} aria-controls="rec-live-pane" onClick={toggleLive}>
                 <span className="rec-live-tab-title">Live step {livePane ? '›' : '‹'}</span>
                 {started && <span className={`rec-tag tag-${chipOf(current)}`}>{chipOf(current)}</span>}
-                {started && !livePane && <span className="rec-live-tab-actor">{stepLabel(current)}</span>}
               </button>
               {livePane && <div id="rec-live-pane" className="rec-livebody"><LiveStep rec={rec} e={current} started={started} idx={idx} total={timeline.length} /></div>}
             </div>
