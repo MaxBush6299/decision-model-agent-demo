@@ -244,23 +244,26 @@ function Viewer({ entry, runId, detail }: { entry: IndexEntry; runId?: string; d
 
 function LiveStep({ rec, e, started, idx, total }: { rec: Recording; e: TimelineEvent; started: boolean; idx: number; total: number }) {
   const card = requestCard(rec);
-  const request = (
+  const [showReq, setShowReq] = useState(false);
+  const question = SCENARIO_TITLES[rec.scenario]?.question ?? '';
+  const full = (
     <section className="rec-request" aria-label="The request">
       <h4>The request</h4>
-      {card.title && <p className="rec-request-title">{card.title}</p>}
       <ul>{card.items.map((it, i) => <li key={i}>{it}</li>)}</ul>
+      {card.title && <p className="note">Recorded case header: {card.title}</p>}
     </section>
   );
   if (!started) {
-    return <aside className="rec-live" aria-label="Live step"><h3>Live step</h3>{request}<p className="rec-live-idle">Press play to watch this recorded run step by step.</p></aside>;
-  }
-  const tag = chipOf(e);
+    return <aside className="rec-live" aria-label="Live step"><h3>Live step</h3>{full}<p className="rec-live-idle">Press play to watch this recorded run step by step.</p></aside>;
+  }  const tag = chipOf(e);
   const ex = stepExplain(e);
   return (
     <aside className="rec-live" aria-label="Live step">
       <h3>Live step <span className="rec-live-count">Step {idx + 1} of {total}</span></h3>
       <div className="rec-progress" role="progressbar" aria-valuemin={1} aria-valuemax={total} aria-valuenow={idx + 1}><i style={{ width: `${((idx + 1) / total) * 100}%` }} /></div>
-      {request}
+      {e.kind === "run_start" ? full : (
+        <div className="rec-reqref"><p>{question} <button type="button" className="rec-link" aria-expanded={showReq} onClick={() => setShowReq((v) => !v)}>{showReq ? "Hide request" : "Show request"}</button></p>{showReq && full}</div>
+      )}
       <div className="rec-live-step" aria-live="polite">
         <p><span className={`rec-tag tag-${tag}`}>{tag}</span> <strong>{stepLabel(e)}</strong></p>
         <p className="note">Recorded at {e.t_offset_s.toFixed(1)} s</p>
