@@ -82,3 +82,18 @@ it('every recording opens', async () => {
     unmount();
   }
 });
+
+it('flow canvas shows tools, parallel specialists and the no-specialist path from recorded events only', async () => {
+  const { FlowCanvas } = await import('../recordings/FlowCanvas');
+  const o = load<Recording>('order-pull-forward.json');
+  const lastIdx = o.timeline.length - 1;
+  const { container, rerender } = render(<FlowCanvas timeline={o.timeline} idx={lastIdx} />);
+  expect(container.querySelectorAll('[data-node]').length).toBe(9);
+  expect(container.querySelectorAll('.rec-toolchip').length).toBeGreaterThan(0);
+  expect(container.querySelector('[data-edge="routing-coordinator"]')).toBeNull();
+  const c = load<Recording>('carrier-delay.json');
+  rerender(<FlowCanvas timeline={c.timeline} idx={c.timeline.length - 1} />);
+  expect(container.querySelector('[data-edge="routing-coordinator"]')).not.toBeNull();
+  expect(container.querySelectorAll('.rec-toolchip').length).toBe(0);
+  expect(container.querySelector('[data-node="production"]')?.getAttribute('class')).toContain('node-ghost');
+});

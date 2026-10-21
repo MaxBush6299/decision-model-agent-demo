@@ -90,16 +90,16 @@ export function attemptLabel(a: Attempt): string {
 }
 
 export type FlowNode = 'request' | 'd1' | 'routing' | 'supply-chain' | 'production' | 'commercial' | 'coordinator' | 'validation' | 'final';
-export const FLOW_NODES: { id: FlowNode; label: string; sub: string }[] = [
-  { id: 'request', label: 'Request', sub: 'Synthetic case' },
-  { id: 'd1', label: 'Decision-1', sub: 'Need assessment + selection' },
-  { id: 'routing', label: 'Host routing', sub: 'Policy code' },
-  { id: 'supply-chain', label: 'Supply-chain', sub: 'Specialist (GPT)' },
-  { id: 'production', label: 'Production', sub: 'Specialist (GPT)' },
-  { id: 'commercial', label: 'Commercial', sub: 'Specialist (GPT)' },
-  { id: 'coordinator', label: 'Coordinator', sub: 'GPT' },
-  { id: 'validation', label: 'Decision-1 validation', sub: 'Scores the proposal' },
-  { id: 'final', label: 'Final status', sub: 'Host policy code' },
+export const FLOW_NODES: { id: FlowNode; label: string; type: string; icon: string }[] = [
+  { id: 'request', label: 'Request', type: 'Request', icon: '✉' },
+  { id: 'd1', label: 'Decision-1', type: 'Scorer', icon: '◈' },
+  { id: 'routing', label: 'Routing', type: 'Host policy', icon: '⑂' },
+  { id: 'supply-chain', label: 'Supply-chain', type: 'Agent', icon: '◉' },
+  { id: 'production', label: 'Production', type: 'Agent', icon: '◉' },
+  { id: 'commercial', label: 'Commercial', type: 'Agent', icon: '◉' },
+  { id: 'coordinator', label: 'Coordinator', type: 'Agent', icon: '◉' },
+  { id: 'validation', label: 'Validation', type: 'Scorer', icon: '◈' },
+  { id: 'final', label: 'Final status', type: 'Host output', icon: '⚑' },
 ];
 
 /** Node a recorded event belongs to; null when the event does not belong to a drawn node (waits keep the prior node). */
@@ -116,10 +116,10 @@ export function nodeOf(e: TimelineEvent): FlowNode | null {
   }
 }
 
-export interface FlowState { active: FlowNode | null; visited: Set<FlowNode>; skipped: Set<FlowNode>; waiting: boolean; tool?: string }
+export interface FlowState { active: FlowNode | null; prev: FlowNode | null; visited: Set<FlowNode>; skipped: Set<FlowNode>; waiting: boolean; tool?: string; tools: Record<string, string[]> }
 
 export function flowAt(timeline: TimelineEvent[], idx: number): FlowState {
-  const st: FlowState = { active: null, visited: new Set(), skipped: new Set(), waiting: false };
+  const st: FlowState = { active: null, prev: null, visited: new Set(), skipped: new Set(), waiting: false, tools: {} };
   for (let i = 0; i <= idx && i < timeline.length; i++) {
     const e = timeline[i];
     const n = nodeOf(e);
@@ -128,7 +128,8 @@ export function flowAt(timeline: TimelineEvent[], idx: number): FlowState {
     }
     st.waiting = e.kind === 'pacing_wait';
     st.tool = e.kind === 'tool_call' ? e.tool : undefined;
-    if (n) { if (st.active && st.active !== n) st.visited.add(st.active); st.active = n; }
+    if (e.kind === 'tool_call' && e.actor && e.tool) st.tools[e.actor] = [...(st.tools[e.actor] ?? []).filter((t) => t !== e.tool), e.tool];
+    if (n) { if (st.active && st.active !== n) { st.visited.add(st.active); st.prev = st.active; } st.active = n; }
   }
   return st;
 }

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  attemptLabel, chipOf, FLOW_NODES, flowAt, kpis, outcomeOf, playbackDelayMs, routingOf, SCENARIO_TITLES, stepLabel, transcriptSections,
-  type FlowNode, type IndexEntry, type Recording, type TimelineEvent,
+  attemptLabel, chipOf, kpis, outcomeOf, playbackDelayMs, routingOf, SCENARIO_TITLES, stepLabel, transcriptSections,
+  type IndexEntry, type Recording, type TimelineEvent,
 } from '../recordings/model';
+import { FlowCanvas } from '../recordings/FlowCanvas';
 
 const BASE = `${import.meta.env.BASE_URL}recordings/v2/`;
 const NOT_RELIABILITY = 'These are recorded observations of single runs on synthetic data. They show how the system behaved, not how reliable it is, and make no readiness claim.';
@@ -182,8 +183,8 @@ function Viewer({ entry, runId }: { entry: IndexEntry; runId?: string }) {
             <p className="rec-caption">Policy code, not the model, picks the path. Decision-1 never approves an action, and “advisory complete” is not execution, safety certification or customer commitment. Probability and confidence are separate fields (see the Audit trail).</p>
           </section>
 
-          <div className="rec-main">
-            <section className={`rec-player${focus('player')}`} aria-label="Replay">
+          <section className="rec-stage" aria-label="Request flow stage">
+              <FlowCanvas timeline={timeline} idx={idx} />
               <div className="rec-controls" role="group" aria-label="Playback controls">
                 <button type="button" onClick={() => { setPlaying(false); setIdx(0); }}>Restart</button>
                 <button type="button" disabled={idx === 0} onClick={() => { setPlaying(false); setIdx(idx - 1); }}>Back</button>
@@ -193,7 +194,10 @@ function Viewer({ entry, runId }: { entry: IndexEntry; runId?: string }) {
                 <label><input type="checkbox" checked={skipWaits} onChange={(e) => setSkipWaits(e.target.checked)} /> Skip long waits (compressed)</label>
               </div>
               <p className="rec-clock" aria-live="polite">Step {idx + 1} of {timeline.length} · recorded time {current.t_offset_s.toFixed(1)} s{skipWaits ? ' · long gaps compressed in playback' : ''}</p>
-              <Flow timeline={timeline} idx={idx} />
+          </section>
+
+          <div className="rec-main">
+            <section className={`rec-player${focus('player')}`} aria-label="Replay">
               <pre className="rec-terminal" ref={termRef} tabIndex={0} aria-label="Terminal transcript">{revealed.flatMap((s) => s.lines).join('\n')}</pre>
               <p className="rec-caption">The terminal is the exact sanitized transcript. The capture has no per-line timing, so each section appears when its matching recorded step completes.</p>
             </section>
@@ -218,35 +222,6 @@ function Viewer({ entry, runId }: { entry: IndexEntry; runId?: string }) {
 
       {tab === 'audit' && <Audit rec={rec} />}
       {tab === 'runs' && <Runs entry={entry} rec={rec} showId={showId} focus={focus('disclosure')} />}
-    </div>
-  );
-}
-
-function Flow({ timeline, idx }: { timeline: TimelineEvent[]; idx: number }) {
-  const st = flowAt(timeline, idx);
-  const cur = timeline[idx];
-  const caption = `Active: ${stepLabel(cur)}${st.waiting ? ' (local pacing wait)' : ''}`;
-  const cls = (id: FlowNode) => `rec-node${st.active === id ? ' active' : ''}${st.visited.has(id) ? ' visited' : ''}${st.skipped.has(id) ? ' skipped' : ''}`;
-  const specialists = FLOW_NODES.filter((n) => ['supply-chain', 'production', 'commercial'].includes(n.id));
-  const node = (n: (typeof FLOW_NODES)[number]) => (
-    <div key={n.id} className={cls(n.id)} data-node={n.id} aria-current={st.active === n.id ? 'step' : undefined}>
-      <strong>{n.label}</strong>
-      <small>{st.skipped.has(n.id) ? 'Skipped by host (not needed)' : n.sub}</small>
-      {st.active === n.id && st.tool && <span className="rec-node-tool">Tool: {st.tool}</span>}
-      {st.active === n.id && st.waiting && <span className="rec-node-wait">Waiting (local pacing)</span>}
-    </div>
-  );
-  const one = (id: FlowNode) => node(FLOW_NODES.find((n) => n.id === id)!);
-  return (
-    <div className="rec-flowviz" role="group" aria-label="Request flow">
-      <div className="rec-flowrow">
-        {one('request')}<span className="rec-arrow">→</span>{one('d1')}<span className="rec-arrow">→</span>{one('routing')}
-      </div>
-      <div className="rec-flowrow rec-specialists">{specialists.map(node)}</div>
-      <div className="rec-flowrow">
-        {one('coordinator')}<span className="rec-arrow">→</span>{one('validation')}<span className="rec-arrow">→</span>{one('final')}
-      </div>
-      <p className="rec-caption" aria-live="polite">{caption}. Nodes light up only when a matching event is in the recording; the order and outcomes are the recorded ones.</p>
     </div>
   );
 }
