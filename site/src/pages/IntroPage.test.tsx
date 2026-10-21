@@ -109,6 +109,7 @@ it('links Home to the Demo showcase without readiness or live claims', () => {
   const links = screen.getAllByRole('link', { name: 'Open the Demo showcase' });
   expect(links).toHaveLength(2);
   links.forEach((l) => expect(l).toHaveAttribute('href', '#showcase'));
-  expect(screen.getByText(/Replays of recorded runs, selected after the fact\. Nothing is executed/)).toBeVisible();
-  expect(document.body.textContent).not.toMatch(/Recorded runs|production-ready|is reliable/);
+  expect(screen.getByText(/Nothing is executed, and opening these makes no new model calls/)).toBeVisible();
+  expect(screen.getByText(/selected after the fact; not a reliability measure/)).toBeVisible();
+  expect(document.body.textContent).not.toMatch(/production-ready|is reliable/);
 });

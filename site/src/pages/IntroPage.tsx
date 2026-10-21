@@ -75,16 +75,22 @@ export function IntroPage() {
 
       <section className="home-launchpad" aria-labelledby="home-paths-title">
         <h3 id="home-paths-title">Now follow a recorded decision</h3>
-        <p>Tomorrow’s factory needs 480 assemblies. There are parts for 310. See the ideas above in five steps: the issue, routing, specialist advice, validation, and human review. Learn separates supplied facts, model judgments, ordinary rules, and the person’s decision.</p>
-        <a className="home-start" href="#learn">Follow the recorded shortage</a>
-        <p className="home-provenance">One recorded case with synthetic facts. No actions were executed. Reading Home or Learn makes no new model calls.</p>
-                <div className="home-showcase-card">
-                  <h4>Or watch a team of agents work a case</h4>
-                  <p>The Demo showcase replays recorded runs of four synthetic planning scenarios on one system diagram: Decision-1 scoring, host routing, specialist agents, a Coordinator and a final check. Step through each replay and read what each part produced. Outcomes range from advisory complete to requires human review.</p>
-                  <a href="#showcase">Open the Demo showcase</a>
-                  <p className="home-provenance">Replays of recorded runs, selected after the fact. Nothing is executed and opening it makes no new model calls. It shows what happened in those runs, not how reliably the system performs.</p>
-                </div>
-              </section>
+        <div className="home-path-cards">
+          <article className="home-path-card">
+            <h4>Follow the recorded shortage</h4>
+            <p>Five steps through one factory shortage: the issue, routing, specialist advice, validation, and human review.</p>
+            <a className="home-start" href="#learn">Follow the recorded shortage</a>
+            <small>One recorded case with synthetic facts.</small>
+          </article>
+          <article className="home-path-card">
+            <h4>Demo showcase</h4>
+            <p>Replay four recorded scenarios on one diagram of agents working a case, from Decision-1 routing to the final check.</p>
+            <a className="home-start home-start-secondary" href="#showcase">Open the Demo showcase</a>
+            <small>Replays were selected after the fact; not a reliability measure.</small>
+          </article>
+        </div>
+        <p className="home-provenance">Recorded runs of synthetic cases. Nothing is executed, and opening these makes no new model calls.</p>
+      </section>
 
       <details className="home-support">
         <summary>Sources and context</summary>

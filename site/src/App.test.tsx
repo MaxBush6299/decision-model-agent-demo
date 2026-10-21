@@ -1,6 +1,10 @@
 import { act, render, screen, within } from '@testing-library/react';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import App from './App';
+
+beforeEach(() => {
+  vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+});
 
 afterEach(() => {
   window.history.replaceState(null, '', '/');
@@ -95,4 +99,15 @@ it('switches between demo-showcase routes and keeps legacy #recordings links wor
   navigate('#recordings/nope');
   expect(await screen.findByRole('alert')).toBeTruthy();
   expect(window.location.hash).toBe('#showcase/nope');
+});
+
+it('scrolls to the top when the route changes', () => {
+  setup();
+  const scroll = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+  render(<App />);
+  navigate('#learn');
+  expect(scroll).toHaveBeenCalledWith(0, 0);
+  scroll.mockClear();
+  navigate('#intro');
+  expect(scroll).toHaveBeenCalledWith(0, 0);
 });

@@ -41,8 +41,12 @@ export default function App() {
       setHash(window.location.hash);
     };
     navigate();
-    window.addEventListener('hashchange', navigate);
-    return () => window.removeEventListener('hashchange', navigate);
+    const onHashChange = () => {
+      navigate();
+      window.scrollTo(0, 0);
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
   return (
