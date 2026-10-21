@@ -1,0 +1,40 @@
+[
+ {
+  "scenario": "quality-hold",
+  "file": "quality-hold.json",
+  "selected": "Q01",
+  "runs_recorded": 1,
+  "other_attempts": []
+ },
+ {
+  "scenario": "carrier-delay",
+  "file": "carrier-delay.json",
+  "selected": "C02",
+  "runs_recorded": 2,
+  "other_attempts": [
+   {
+    "id": "C01",
+    "file": "carrier-delay.C01.json"
+   }
+  ]
+ },
+ {
+  "scenario": "production-resequence",
+  "file": "production-resequence.json",
+  "selected": "P02",
+  "runs_recorded": 2,
+  "other_attempts": [
+   {
+    "id": "P01",
+    "file": "production-resequence.P01.json"
+   }
+  ]
+ },
+ {
+  "scenario": "order-pull-forward",
+  "file": "order-pull-forward.json",
+  "selected": "O01",
+  "runs_recorded": 1,
+  "other_attempts": []
+ }
+]

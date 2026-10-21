@@ -1,0 +1,312 @@
+{
+ "schema_version": "1.0-candidate",
+ "mode": "recorded_live",
+ "transport": "apim",
+ "data": "synthetic",
+ "recording_alias": "carrier-delay-C01",
+ "scenario": "carrier-delay",
+ "source_commit": "a7860e7",
+ "model_profile": "gpt-6-luna",
+ "captured_utc_date": "2026-10-20",
+ "disclosure": {
+  "runs_recorded_for_scenario": 2,
+  "selected": "C02",
+  "selection_rule": "independent semantic review; clean advisory_complete preferred; earliest ordinal ties",
+  "all_attempts": [
+   {
+    "id": "C01",
+    "host_status": "pending",
+    "review_note": "correct proposal; Decision-1 validation said Needs revision, host paused"
+   },
+   {
+    "id": "C02",
+    "host_status": "advisory_complete",
+    "review_note": "clean"
+   }
+  ],
+  "caveat": "Small sample; observed behavior, not reliability or readiness.",
+  "shown_run": "C01",
+  "shown_is_selected": false
+ },
+ "display_transcript": [
+  "LIVE Azure Foundry inference | SYNTHETIC fixture tools | proposals only",
+  "GPT deployment=<redacted>; profile=gpt-6-luna; local pacing=10 RPM/10,000 estimated TPM; output allowance=2,400 tokens.",
+  "At most one clarification; hard maximum 20 GPT +4 Decision-1 attempts, not expected runtime.",
+  "",
+  "=== CASE ===",
+  "SYNTHETIC Carrier delay within existing authority | snapshot Thu 15 Oct 2026 14:00 UTC-05:00",
+  "Fictional Tier-1 customer | order SO-6101",
+  "Primary carrier breakdown projects Friday 12:30, after the 09:00-11:00 window. All 600 units",
+  "are released, packed and staged. An approved alternate carrier offers a documented slot.",
+  "Expected specialist route: 0 (resolved carrier record). Live decisions may differ; no forced",
+  "routing.",
+  "Demand 600; unallocated released finished units 600; planned production 0.",
+  "Ready plan: Thu 15 Oct 2026 13:30 UTC-05:00",
+  "Fictional approved regional carrier B: booking cutoff Thu 15 Oct 2026 14:30 UTC-05:00; pickup",
+  "Thu 15 Oct 2026 15:00 UTC-05:00, 1110 transit minutes.",
+  "Arrival plan Fri 16 Oct 2026 09:30 UTC-05:00; customer window Fri 16 Oct 2026 09:00 UTC-05:00",
+  "to Fri 16 Oct 2026 11:00 UTC-05:00.",
+  "Incremental freight $900 against $2,500 authority. Customer schedule/request reference:",
+  "EDI-SCHEDULE-6101.",
+  "Synthetic read-only planning records; no real shipment, production or customer writes.",
+  "",
+  "=== ASSESSMENT NEED ===",
+  "Decision-1 overall assessment need: assessment needed (below routing policy) | chosen-option",
+  "probability 65.9% | model-reported confidence 49%.",
+  "Host routing: conservatively assess; overall necessity is uncertain, not a business verdict.",
+  "Next: select contributing specialists.",
+  "",
+  "=== TEAM ===",
+  "Supply-Chain: model choice not needed | chosen-option probability 89.0% | model-reported",
+  "confidence 83%.",
+  "  Routing outcome: skip specialist.",
+  "Production: model choice not needed | chosen-option probability 92.3% | model-reported",
+  "confidence 88%.",
+  "  Routing outcome: skip specialist.",
+  "Commercial: model choice not needed | chosen-option probability 87.9% | model-reported",
+  "confidence 82%.",
+  "  Routing outcome: skip specialist.",
+  "Actual specialist route: 0 | none",
+  "No specialist selected confidently; Coordinator will assess canonical evidence directly. This",
+  "is not a no-assessment disposition.",
+  "",
+  "=== INITIAL PLAN ===",
+  "Initial coordinator proposal: Recommend the documented, confirmed slot with approved carrier",
+  "B: projected arrival is 09:30, within the existing 09:00\u201311:00 customer window, using 600",
+  "released finished units and no new build. Incremental freight is $900, within the stated",
+  "$2,500 planner authority; the tradeoff is added freight cost for a feasible on-time delivery",
+  "path versus the primary carrier\u2019s projected 12:30 arrival. This is advisory only; responsible",
+  "owners retain booking and execution authority.",
+  "Next step: plan the approved alternative carrier within existing authority",
+  "Decision-1 proposal validation (not execution): Needs revision (below routing policy) |",
+  "chosen-option probability 57.9% | model-reported confidence 37%.",
+  "",
+  "=== HUMAN CLARIFICATION ===",
+  "Responsible-owner review is required; this case has no supported terminal evidence update.",
+  "Validation unresolved: Needs revision",
+  "1. Leave review pending for responsible-owner evidence.",
+  "2. Request leadership escalation for unresolved review.",
+  "Choose 1 or 2: Review pending: human-input deadline expired.",
+  "",
+  "=== UPDATED HANDOFF ===",
+  "Final advisory status: pending. No stock released, notification sent, customer commitment made",
+  "or spending authorized.",
+  "Unresolved: Validation unresolved: Needs revision",
+  "Actual shipment, production and customer actions remain with responsible owners.",
+  "Actual model attempts: GPT 1/20; Decision-1 3/4; fixture tools 0/12."
+ ],
+ "timeline": [
+  {
+   "seq": 1,
+   "t_offset_s": 0.063,
+   "kind": "run_start",
+   "scenario": "carrier-delay-v2",
+   "llm_profile": "gpt-6-luna",
+   "gpt_deadline_s": 120
+  },
+  {
+   "seq": 2,
+   "t_offset_s": 1.266,
+   "kind": "model_call_start",
+   "actor": "assessment",
+   "revision": 0,
+   "attempt": 1,
+   "deadline_s": 60,
+   "call_kind": "decision"
+  },
+  {
+   "seq": 3,
+   "t_offset_s": 1.766,
+   "kind": "model_call_end",
+   "actor": "assessment",
+   "attempt": 1,
+   "http_status": 200,
+   "usage": {
+    "input_tokens": 1679,
+    "output_tokens": 1
+   },
+   "elapsed_ms": 500.0,
+   "call_kind": "decision"
+  },
+  {
+   "seq": 4,
+   "t_offset_s": 1.766,
+   "kind": "decision_result",
+   "actor": "assessment",
+   "revision": 0,
+   "answers": {
+    "assessment_needed": {
+     "choice": "assessment_needed",
+     "confidence": 0.48924789392899604,
+     "probabilities": {
+      "assessment_needed": 0.659498595952664,
+      "cannot_determine": 0.02897634430797783,
+      "no_further_assessment": 0.3115250597393582
+     }
+    }
+   }
+  },
+  {
+   "seq": 5,
+   "t_offset_s": 3.094,
+   "kind": "model_call_start",
+   "actor": "selection",
+   "revision": 0,
+   "attempt": 1,
+   "deadline_s": 60,
+   "call_kind": "decision"
+  },
+  {
+   "seq": 6,
+   "t_offset_s": 3.375,
+   "kind": "model_call_end",
+   "actor": "selection",
+   "attempt": 1,
+   "http_status": 200,
+   "usage": {
+    "input_tokens": 2294,
+    "output_tokens": 3
+   },
+   "elapsed_ms": 281.0,
+   "call_kind": "decision"
+  },
+  {
+   "seq": 7,
+   "t_offset_s": 3.375,
+   "kind": "decision_result",
+   "actor": "selection",
+   "revision": 0,
+   "answers": {
+    "commercial_needed": {
+     "choice": "not_needed",
+     "confidence": 0.8183931736020649,
+     "probabilities": {
+      "cannot_determine": 0.01609814578559401,
+      "needed": 0.10497307181302944,
+      "not_needed": 0.8789287824013766
+     }
+    },
+    "production_needed": {
+     "choice": "not_needed",
+     "confidence": 0.8843401071607262,
+     "probabilities": {
+      "cannot_determine": 0.0102524177291372,
+      "needed": 0.06685417749704539,
+      "not_needed": 0.9228934047738174
+     }
+    },
+    "supply_chain_needed": {
+     "choice": "not_needed",
+     "confidence": 0.8348582142886047,
+     "probabilities": {
+      "cannot_determine": 0.016299185768347844,
+      "needed": 0.09379533803924903,
+      "not_needed": 0.8899054761924031
+     }
+    }
+   }
+  },
+  {
+   "seq": 8,
+   "t_offset_s": 3.375,
+   "kind": "routing",
+   "detail": {
+    "active": [],
+    "uncertain": [],
+    "effective": {
+     "supply-chain": "not_needed",
+     "production": "not_needed",
+     "commercial": "not_needed"
+    }
+   }
+  },
+  {
+   "seq": 9,
+   "t_offset_s": 4.688,
+   "kind": "model_call_start",
+   "actor": "coordinator",
+   "revision": 0,
+   "attempt": 1,
+   "deadline_s": 120,
+   "call_kind": "gpt"
+  },
+  {
+   "seq": 10,
+   "t_offset_s": 9.813,
+   "kind": "model_call_end",
+   "actor": "coordinator",
+   "attempt": 1,
+   "http_status": 200,
+   "usage": {
+    "input_tokens": 2250,
+    "output_tokens": 438,
+    "total_tokens": 2688
+   },
+   "elapsed_ms": 5125.0,
+   "call_kind": "gpt"
+  },
+  {
+   "seq": 11,
+   "t_offset_s": 11.219,
+   "kind": "model_call_start",
+   "actor": "validation",
+   "revision": 0,
+   "attempt": 1,
+   "deadline_s": 60,
+   "call_kind": "decision"
+  },
+  {
+   "seq": 12,
+   "t_offset_s": 12.094,
+   "kind": "model_call_end",
+   "actor": "validation",
+   "attempt": 1,
+   "http_status": 200,
+   "usage": {
+    "input_tokens": 1744,
+    "output_tokens": 1
+   },
+   "elapsed_ms": 875.0,
+   "call_kind": "decision"
+  },
+  {
+   "seq": 13,
+   "t_offset_s": 12.094,
+   "kind": "decision_result",
+   "actor": "validation",
+   "revision": 0,
+   "answers": {
+    "validation": {
+     "choice": "Needs revision",
+     "confidence": 0.36902944974718865,
+     "probabilities": {
+      "Addresses the issue": 0.3981830825099071,
+      "Cannot determine": 0.022463950991967144,
+      "Needs revision": 0.5793529664981257
+     }
+    }
+   }
+  },
+  {
+   "seq": 14,
+   "t_offset_s": 312.11,
+   "kind": "final",
+   "status": "pending",
+   "code": 2,
+   "warnings": 0,
+   "gpt_attempts": 1,
+   "decision_attempts": 3,
+   "transport_retries": 0
+  }
+ ],
+ "integrity": {
+  "transcript_sha256": "135fdbe2914e51477e216472b664aa048ea038296af89fc195a0addef616e65a",
+  "private_fields_omitted": [
+   "APIM run id",
+   "message bodies",
+   "identity",
+   "endpoints"
+  ],
+  "usage_note": "usage per request as returned; null when absent"
+ }
+}
