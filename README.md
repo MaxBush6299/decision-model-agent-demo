@@ -35,11 +35,15 @@ model calls from the browser, and nothing in it is executed.
 The v1 CLI default and the v2 recordings use different GPT models; don't read one
 as the other. Deployment names and endpoints are not published here.
 
-### What is on `main` vs the v2 branch
+### What is in this repository
 
-`main` has the v1 Python CLI, the site, and the **recordings** of v2 runs. The
-multi-agent v2 implementation (Microsoft Agent Framework orchestration, fixture
-tools) lives on a separate branch and **has not been merged into `main`**.
+`main` holds everything: the v1 Python CLI (`decision_demo.py`), the v2
+multi-agent CLI (`decision_demo_v2.py` and `decision_v2/`, built on Microsoft
+Agent Framework with synthetic read-only fixture tools), the site, and the
+**recordings** of v2 runs that the Demo showcase replays. The site itself runs no
+model and executes nothing. v2 setup, boundaries, and results are in
+[docs/v2.md](docs/v2.md). Pre-merge history of the v2 work is preserved in the tag
+`v2-pre-integration-2026-10-26`.
 
 ## v1 CLI
 
@@ -145,6 +149,14 @@ returned and validation succeeds, its handoff is deterministic.
 .\.venv\Scripts\python.exe -m unittest -v
 ```
 
+To run the v1 and v2 tests together, install the v2 dependencies first (this
+includes `requirements.txt`):
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-v2.txt
+.\.venv\Scripts\python.exe -m unittest
+```
+
 Tests mock credentials and HTTP, including error paths and terminal review.
 They do not call Azure. The release CLI's parameterized configuration has been
 verified with mocks, **not a new live smoke test**. Earlier user runs of the
@@ -167,6 +179,7 @@ It requires no backend, Azure sign-in, or model credentials.
 ## Documentation
 
 - [Behavior, API contracts, and human-review rules](docs/behavior.md)
+- [v2 multi-agent examples: setup, boundaries, and recorded results](docs/v2.md)
 - [Troubleshooting and exit codes](docs/troubleshooting.md)
 - [Microsoft documentation and release provenance](docs/sources.md)
 
