@@ -1,4 +1,5 @@
 import unittest
+import sys
 import asyncio
 import json
 import time
@@ -3295,6 +3296,7 @@ class TerminalTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(runtime.budget.counts, {"gpt": 7, "decision": 3})
         self.assertTrue(any("Actual model attempts:" in line for line in trace))
 
+    @unittest.skipUnless(sys.platform == "win32", "uses the Windows-only msvcrt console API")
     async def test_windows_choices_and_fields_valid_invalid_eof_and_interrupt(self):
         import msvcrt
         from decision_v2.contracts import ClarificationRequest
