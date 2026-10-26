@@ -6,10 +6,45 @@ proposal; a second decision pass checks whether that proposal addresses the
 original issue. Explicit review requests and approval rules can pause the
 terminal for a person.
 
-**[Home and Learn website](https://maxbush6299.github.io/decision-model-agent-demo/)**
-is a static learning experience with recorded examples, not a hosted live
-inference service. The Python CLI makes real requests to your configured Azure
-resource. Neither executes plant actions or grants real spending authority.
+## The published site
+
+**[Open the site](https://maxbush6299.github.io/decision-model-agent-demo/)**
+is a static, read-only experience of recorded, synthetic examples. It makes no
+model calls from the browser, and nothing in it is executed.
+
+- **Home** explains what a decision model is and links to the two pages below.
+- **Learn** (`#learn`) is an in-depth worked example: what a decision model
+  decides, and how routing, specialist advice, validation, and human review fit
+  together in one recorded shortage case.
+- **Demo showcase** (`#showcase`) replays four recorded scenarios (quality hold,
+  carrier delay, production resequence, order pull-forward) on one animated
+  master diagram of agents working a case. Pick a scenario, then play, pause,
+  step, change speed, or skip long waits. A collapsible "Live step" pane shows the
+  current step, and a terminal drawer shows the recorded transcript. Outcomes are
+  advisory proposals, requires-human-review, or pending validation below policy.
+  Replays were selected after the fact and are not a reliability measure.
+
+### Models
+
+| Where | Models |
+| --- | --- |
+| Bounded scoring, routing, and proposal validation (both versions) | **Microsoft-Decision-1** |
+| v1 CLI in this repo (`decision_demo.py`) | **GPT-4.1-mini** specialist (your own deployment) |
+| Recorded v2 showcase examples | Specialist and coordinator agents used GPT-6 Luna (profile `gpt-6-luna`), per the recording metadata |
+
+The v1 CLI default and the v2 recordings use different GPT models; don't read one
+as the other. Deployment names and endpoints are not published here.
+
+### What is on `main` vs the v2 branch
+
+`main` has the v1 Python CLI, the site, and the **recordings** of v2 runs. The
+multi-agent v2 implementation (Microsoft Agent Framework orchestration, fixture
+tools) lives on a separate branch and **has not been merged into `main`**.
+
+## v1 CLI
+
+The Python CLI makes real requests to your configured Azure resource. It
+executes no plant actions and grants no real spending authority.
 
 ```text
 Issue -> Decision-1 routing -> GPT specialist proposal
@@ -122,7 +157,8 @@ Set-Location site
 npm ci
 npm test -- --run
 npm run build
-npm run dev
+npm run dev       # local dev server (Vite prints the URL)
+npm run preview   # serves the built site (after npm run build)
 ```
 
 The site is deployed by `.github/workflows/pages.yml` to project GitHub Pages.
